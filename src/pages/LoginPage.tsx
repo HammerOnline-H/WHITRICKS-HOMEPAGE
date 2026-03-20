@@ -15,8 +15,12 @@ export default function LoginPage() {
   const handleLogin = async () => {
     try {
       await loginWithGoogle();
-    } catch (err) {
-      setError("Login failed. Please try again.");
+    } catch (err: any) {
+      if (err.code === 'auth/unauthorized-domain') {
+        setError("This domain is not authorized for login. Please add the Shared App URL to your Firebase Console (Authentication -> Settings -> Authorized Domains).");
+      } else {
+        setError(err.message || "Login failed. Please try again.");
+      }
     }
   };
 

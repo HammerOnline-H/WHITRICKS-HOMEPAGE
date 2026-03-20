@@ -36,7 +36,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 text-white font-bold text-2xl tracking-tighter">
           {content.home.logo ? (
-            <img src={content.home.logo} alt="WHITRICKS Logo" className="w-8 h-8 object-contain" referrerPolicy="no-referrer" />
+            <img src={content.home.logo} alt="WHITRICKS Logo" className="w-16 h-16 object-contain" referrerPolicy="no-referrer" />
           ) : (
             <Wand2 className="text-purple-500" />
           )}

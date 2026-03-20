@@ -12,7 +12,7 @@ import { Performance, GalleryItem, Partner, SiteContent, Member } from '../types
 import Cropper from 'react-easy-crop';
 import getCroppedImg from '../lib/cropImage';
 
-function ImageUploader({ label, value, onChange, aspectRatio = 1 }: { label: string, value: string, onChange: (val: string) => void, aspectRatio?: number }) {
+function ImageUploader({ label, value, onChange, aspectRatio }: { label: string, value: string, onChange: (val: string) => void, aspectRatio?: number }) {
   const [image, setImage] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -60,8 +60,8 @@ function ImageUploader({ label, value, onChange, aspectRatio = 1 }: { label: str
     <div className="space-y-4">
       <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">{label}</label>
       <div className="flex items-center gap-4">
-        <div className="w-20 h-20 rounded-xl bg-black border border-white/10 overflow-hidden flex-shrink-0">
-          {value ? <img src={value} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <div className="w-full h-full flex items-center justify-center text-white/10"><ImageIcon size={24} /></div>}
+        <div className="min-w-[80px] h-20 rounded-xl bg-black border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center p-2">
+          {value ? <img src={value} className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" /> : <div className="w-full h-full flex items-center justify-center text-white/10"><ImageIcon size={24} /></div>}
         </div>
         <div className="flex-1 space-y-2">
           <input 
@@ -93,7 +93,7 @@ function ImageUploader({ label, value, onChange, aspectRatio = 1 }: { label: str
       <AnimatePresence>
         {showCropper && (
           <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-center p-6">
-            <div className="relative w-full max-w-2xl aspect-square bg-zinc-900 rounded-3xl overflow-hidden mb-8 shadow-2xl border border-white/5">
+            <div className="relative w-full max-w-4xl h-[60vh] bg-zinc-900 rounded-3xl overflow-hidden mb-8 shadow-2xl border border-white/5">
               <Cropper
                 image={image!}
                 crop={crop}
@@ -280,7 +280,7 @@ export default function AdminPage() {
                   <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Slogan (Supports 2 Lines)</label>
                   <textarea value={localContent.home.slogan} onChange={e => updateLocal('home.slogan', e.target.value)} rows={2} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500 resize-none" />
                 </div>
-                <ImageUploader label="Team Logo" value={localContent.home.logo || ''} onChange={val => updateLocal('home.logo', val)} aspectRatio={1} />
+                <ImageUploader label="Team Logo" value={localContent.home.logo || ''} onChange={val => updateLocal('home.logo', val)} aspectRatio={undefined} />
                 <ImageUploader label="Hero Background Image" value={localContent.home.bgImage} onChange={val => updateLocal('home.bgImage', val)} aspectRatio={16/9} />
               </div>
             )}
