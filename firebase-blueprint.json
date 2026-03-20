@@ -1,0 +1,103 @@
+{
+  "entities": {
+    "SiteContent": {
+      "title": "Site Content",
+      "description": "General site-wide content and settings",
+      "type": "object",
+      "properties": {
+        "home": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "slogan": { "type": "string" },
+            "bgImage": { "type": "string" }
+          }
+        },
+        "about": {
+          "type": "object",
+          "properties": {
+            "history": { "type": "string" },
+            "member1": { "$ref": "Member" },
+            "member2": { "$ref": "Member" }
+          }
+        },
+        "contact": {
+          "type": "object",
+          "properties": {
+            "address": { "type": "string" },
+            "phone": { "type": "string" },
+            "email": { "type": "string" },
+            "youtube": { "type": "string" },
+            "sns": { "type": "array", "items": { "type": "object", "properties": { "platform": { "type": "string" }, "url": { "type": "string" } } } }
+          }
+        }
+      }
+    },
+    "Member": {
+      "title": "Team Member",
+      "description": "Information about a magic team member",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "bio": { "type": "string" },
+        "links": { "type": "array", "items": { "type": "string" } },
+        "videoUrl": { "type": "string" },
+        "image": { "type": "string" },
+        "order": { "type": "integer" }
+      }
+    },
+    "Performance": {
+      "title": "Performance Category",
+      "description": "A field of magic and its repertoires",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string" },
+        "repertoires": { "type": "string" },
+        "order": { "type": "integer" }
+      }
+    },
+    "GalleryItem": {
+      "title": "Gallery Image",
+      "description": "An image in the activity gallery",
+      "type": "object",
+      "properties": {
+        "imageUrl": { "type": "string" },
+        "description": { "type": "string" },
+        "order": { "type": "integer" }
+      }
+    },
+    "Partner": {
+      "title": "Network Partner",
+      "description": "A partner or collaboration company",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "logo": { "type": "string" },
+        "description": { "type": "string" },
+        "order": { "type": "integer" }
+      }
+    }
+  },
+  "firestore": {
+    "/siteContent/main": {
+      "schema": "SiteContent",
+      "description": "Main site content"
+    },
+    "/performances/{id}": {
+      "schema": "Performance",
+      "description": "List of magic fields and repertoires"
+    },
+    "/gallery/{id}": {
+      "schema": "GalleryItem",
+      "description": "Activity photos"
+    },
+    "/partners/{id}": {
+      "schema": "Partner",
+      "description": "Collaboration network"
+    },
+    "/members/{id}": {
+      "schema": "Member",
+      "description": "Team members list"
+    }
+  }
+}

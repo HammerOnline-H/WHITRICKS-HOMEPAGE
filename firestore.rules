@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: siteContent/main
+    // Fields:
+    //   - home: map { title: string, slogan: string, bgImage: string }
+    //   - about: map { history: string }
+    //   - contact: map { address: string, phone: string, email: string, youtube: string, sns: list }
+    //
+    // Collection: performances/{id}
+    // Fields:
+    //   - category: string (required, < 100 chars)
+    //   - repertoires: string (required, < 5000 chars)
+    //   - order: number (required)
+    //
+    // Collection: gallery/{id}
+    // Fields:
+    //   - imageUrl: string (required, valid URL)
+    //   - description: string (required, < 500 chars)
+    //   - order: number (required)
+    //
+    // Collection: partners/{id}
+    // Fields:
+    //   - name: string (required, < 100 chars)
+    //   - logo: string (required, valid URL)
+    //   - description: string (required, < 500 chars)
+    //   - order: number (required)
+    //
+    // Collection: members/{id}
+    // Fields:
+    //   - name: string (required, < 100 chars)
+    //   - bio: string (required, < 5000 chars)
+    //   - links: list (required, strings < 200 chars)
+    //   - videoUrl: string (optional, valid URL)
+    //   - image: string (required, valid URL)
+    //   - order: number (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "ham80908090@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidSiteContent(data) {
+      return data.home is map && data.about is map && data.contact is map;
+    }
+
+    function isValidPerformance(data) {
+      return data.category is string && data.category.size() < 100 &&
+             data.repertoires is string && data.repertoires.size() < 5000 &&
+             data.order is number;
+    }
+
+    function isValidGalleryItem(data) {
+      return isValidUrl(data.imageUrl) &&
+             data.description is string && data.description.size() < 500 &&
+             data.order is number;
+    }
+
+    function isValidPartner(data) {
+      return data.name is string && data.name.size() < 100 &&
+             isValidUrl(data.logo) &&
+             data.description is string && data.description.size() < 500 &&
+             data.order is number;
+    }
+
+    function isValidMember(data) {
+      return data.name is string && data.name.size() < 100 &&
+             data.bio is string && data.bio.size() < 5000 &&
+             data.links is list &&
+             isValidUrl(data.image) &&
+             data.order is number &&
+             (!('videoUrl' in data) || data.videoUrl == "" || isValidUrl(data.videoUrl));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /siteContent/{document} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidSiteContent(request.resource.data);
+    }
+
+    match /performances/{id} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidPerformance(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /gallery/{id} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidGalleryItem(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /partners/{id} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidPartner(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /members/{id} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidMember(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}
