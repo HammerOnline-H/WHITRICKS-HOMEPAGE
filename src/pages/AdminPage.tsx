@@ -12,6 +12,31 @@ import { Performance, GalleryItem, Partner, SiteContent, Member } from '../types
 import Cropper from 'react-easy-crop';
 import getCroppedImg from '../lib/cropImage';
 
+function LocalInput({ value, onSave, className, placeholder, textarea = false, rows = 3 }: any) {
+  const [localValue, setLocalValue] = React.useState(value);
+  
+  React.useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const Component = textarea ? 'textarea' : 'input';
+
+  return (
+    <Component
+      value={localValue}
+      onChange={(e: any) => setLocalValue(e.target.value)}
+      onBlur={() => {
+        if (localValue !== value) {
+          onSave(localValue);
+        }
+      }}
+      className={className}
+      placeholder={placeholder}
+      rows={rows}
+    />
+  );
+}
+
 function ImageUploader({ label, value, onChange, aspectRatio }: { label: string, value: string, onChange: (val: string) => void, aspectRatio?: number }) {
   const [image, setImage] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -166,7 +191,7 @@ export default function AdminPage() {
     try {
       await setDoc(doc(db, 'siteContent', 'main'), localContent);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      setTimeout(() => setSaveSuccess(false), 1000);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     } finally {
@@ -280,12 +305,12 @@ export default function AdminPage() {
                         exit={{ opacity: 0 }}
                         className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest"
                       >
-                        Saved Successfully!
+                        저장 성공
                       </motion.span>
                     )}
                   </AnimatePresence>
                   <button disabled={saving} className="bg-white text-black px-6 py-2 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-500 hover:text-white transition-all">
-                    <Save size={14} /> {saving ? 'SAVING...' : 'SAVE CHANGES'}
+                    <Save size={14} /> {saving ? 'SAVING...' : 'SAVE'}
                   </button>
                 </div>
               )}
@@ -372,12 +397,12 @@ export default function AdminPage() {
                         
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold text-white/30 uppercase">Name</label>
-                          <input 
+                          <LocalInput 
                             value={member.name} 
-                            onChange={async (e) => {
+                            onSave={async (val: string) => {
                               const path = `members/${member.id}`;
                               try {
-                                await updateDoc(doc(db, 'members', member.id), { name: e.target.value });
+                                await updateDoc(doc(db, 'members', member.id), { name: val });
                               } catch (err) {
                                 handleFirestoreError(err, OperationType.UPDATE, path);
                               }
@@ -388,12 +413,13 @@ export default function AdminPage() {
                         
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold text-white/30 uppercase">Bio (Full Text)</label>
-                          <textarea 
+                          <LocalInput 
                             value={member.bio} 
-                            onChange={async (e) => {
+                            textarea
+                            onSave={async (val: string) => {
                               const path = `members/${member.id}`;
                               try {
-                                await updateDoc(doc(db, 'members', member.id), { bio: e.target.value });
+                                await updateDoc(doc(db, 'members', member.id), { bio: val });
                               } catch (err) {
                                 handleFirestoreError(err, OperationType.UPDATE, path);
                               }
@@ -422,12 +448,12 @@ export default function AdminPage() {
                           <div className="flex gap-2">
                             <div className="flex-1 relative">
                               <Video className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={14} />
-                              <input 
+                              <LocalInput 
                                 value={member.videoUrl} 
-                                onChange={async (e) => {
+                                onSave={async (val: string) => {
                                   const path = `members/${member.id}`;
                                   try {
-                                    await updateDoc(doc(db, 'members', member.id), { videoUrl: e.target.value });
+                                    await updateDoc(doc(db, 'members', member.id), { videoUrl: val });
                                   } catch (err) {
                                     handleFirestoreError(err, OperationType.UPDATE, path);
                                   }
@@ -484,12 +510,12 @@ export default function AdminPage() {
                       <div className="space-y-4">
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold text-white/30 uppercase">Title</label>
-                          <input 
+                          <LocalInput 
                             value={p.title} 
-                            onChange={async (e) => {
+                            onSave={async (val: string) => {
                               const path = `performances/${p.id}`;
                               try {
-                                await updateDoc(doc(db, 'performances', p.id), { title: e.target.value });
+                                await updateDoc(doc(db, 'performances', p.id), { title: val });
                               } catch (err) {
                                 handleFirestoreError(err, OperationType.UPDATE, path);
                               }
@@ -500,12 +526,13 @@ export default function AdminPage() {
                         </div>
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold text-white/30 uppercase">Description</label>
-                          <textarea 
+                          <LocalInput 
                             value={p.description} 
-                            onChange={async (e) => {
+                            textarea
+                            onSave={async (val: string) => {
                               const path = `performances/${p.id}`;
                               try {
-                                await updateDoc(doc(db, 'performances', p.id), { description: e.target.value });
+                                await updateDoc(doc(db, 'performances', p.id), { description: val });
                               } catch (err) {
                                 handleFirestoreError(err, OperationType.UPDATE, path);
                               }
@@ -643,12 +670,12 @@ export default function AdminPage() {
                         }} 
                       />
                       <div className="flex gap-2">
-                        <input 
+                        <LocalInput 
                           value={g.description} 
-                          onChange={async (e) => {
+                          onSave={async (val: string) => {
                             const path = `gallery/${g.id}`;
                             try {
-                              await updateDoc(doc(db, 'gallery', g.id), { description: e.target.value });
+                              await updateDoc(doc(db, 'gallery', g.id), { description: val });
                             } catch (err) {
                               handleFirestoreError(err, OperationType.UPDATE, path);
                             }
@@ -730,24 +757,24 @@ export default function AdminPage() {
                         <img src={p.logo} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                       </div>
                       <div className="flex-1 space-y-2">
-                        <input 
+                        <LocalInput 
                           value={p.name} 
-                          onChange={async (e) => {
+                          onSave={async (val: string) => {
                             const path = `partners/${p.id}`;
                             try {
-                              await updateDoc(doc(db, 'partners', p.id), { name: e.target.value });
+                              await updateDoc(doc(db, 'partners', p.id), { name: val });
                             } catch (err) {
                               handleFirestoreError(err, OperationType.UPDATE, path);
                             }
                           }} 
                           className="w-full bg-black border border-white/10 rounded-lg px-3 py-1 text-xs font-bold" 
                         />
-                        <input 
+                        <LocalInput 
                           value={p.description} 
-                          onChange={async (e) => {
+                          onSave={async (val: string) => {
                             const path = `partners/${p.id}`;
                             try {
-                              await updateDoc(doc(db, 'partners', p.id), { description: e.target.value });
+                              await updateDoc(doc(db, 'partners', p.id), { description: val });
                             } catch (err) {
                               handleFirestoreError(err, OperationType.UPDATE, path);
                             }
