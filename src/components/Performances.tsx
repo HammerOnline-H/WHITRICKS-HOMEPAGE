@@ -20,11 +20,19 @@ export default function Performances({ data }: { data: Performance[] }) {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.1 }}
-              className="p-8 bg-zinc-900 rounded-3xl border border-white/5 hover:border-purple-500/30 transition-all group"
+              className="group"
             >
-              <h3 className="text-2xl font-bold mb-6 group-hover:text-purple-400 transition-colors">{perf.category}</h3>
-              <div className="space-y-3 text-white/50 text-sm leading-relaxed whitespace-pre-wrap">
-                {perf.repertoires}
+              <div className="relative aspect-video overflow-hidden rounded-3xl border border-white/5 mb-6">
+                <img 
+                  src={perf.image} 
+                  alt={perf.title} 
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <h3 className="text-2xl font-bold mb-4 group-hover:text-purple-400 transition-colors">{perf.title}</h3>
+              <div className="text-white/50 text-sm leading-relaxed whitespace-pre-wrap">
+                {perf.description}
               </div>
             </motion.div>
           ))}

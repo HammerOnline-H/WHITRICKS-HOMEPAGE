@@ -36,11 +36,14 @@ const DEFAULT_CONTENT: SiteContent = {
     history: "WHITRICKS PERFORMANCE HISTORY\nLINE 1\nLINE 2\nLINE 3",
   },
   contact: {
+    title: "Let's Connect.",
     address: "ADDRESS TEXT",
     phone: "010-0000-0000",
     email: "email@example.com",
     youtube: "YOUTUBE_URL",
-    sns: [{ platform: "Instagram", url: "INSTA_URL" }]
+    instagram: "INSTA_URL",
+    naverBlog: "NAVER_BLOG_URL",
+    naverPlace: "NAVER_PLACE_URL"
   }
 };
 

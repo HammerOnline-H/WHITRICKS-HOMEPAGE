@@ -24,11 +24,14 @@
         "contact": {
           "type": "object",
           "properties": {
+            "title": { "type": "string" },
             "address": { "type": "string" },
             "phone": { "type": "string" },
             "email": { "type": "string" },
             "youtube": { "type": "string" },
-            "sns": { "type": "array", "items": { "type": "object", "properties": { "platform": { "type": "string" }, "url": { "type": "string" } } } }
+            "instagram": { "type": "string" },
+            "naverBlog": { "type": "string" },
+            "naverPlace": { "type": "string" }
           }
         }
       }
@@ -47,12 +50,13 @@
       }
     },
     "Performance": {
-      "title": "Performance Category",
-      "description": "A field of magic and its repertoires",
+      "title": "Performance Item",
+      "description": "A specific performance with image, title and description",
       "type": "object",
       "properties": {
-        "category": { "type": "string" },
-        "repertoires": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "image": { "type": "string" },
         "order": { "type": "integer" }
       }
     },

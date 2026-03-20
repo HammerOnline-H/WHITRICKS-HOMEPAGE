@@ -19,18 +19,22 @@ export interface SiteContent {
     history: string;
   };
   contact: {
+    title: string;
     address: string;
     phone: string;
     email: string;
     youtube: string;
-    sns: { platform: string; url: string }[];
+    instagram: string;
+    naverBlog: string;
+    naverPlace: string;
   };
 }
 
 export interface Performance {
   id: string;
-  category: string;
-  repertoires: string;
+  title: string;
+  description: string;
+  image: string;
   order: number;
 }
 

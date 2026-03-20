@@ -77,7 +77,7 @@ export default function About({ history, members }: { history: string, members: 
           {isCarousel ? (
             <div 
               ref={carouselRef}
-              className="flex gap-8 overflow-x-auto pb-12 snap-x no-scrollbar"
+              className="flex gap-12 overflow-x-auto pb-12 snap-x no-scrollbar"
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {members.map((member, idx) => (
@@ -86,49 +86,45 @@ export default function About({ history, members }: { history: string, members: 
                   initial={{ opacity: 0, x: 50 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.1 }}
-                  className="flex-shrink-0 w-[280px] md:w-[350px] snap-start group cursor-pointer"
+                  className="flex-shrink-0 w-[180px] md:w-[225px] snap-start group cursor-pointer flex flex-col items-center"
                   onClick={() => setSelectedMember(member)}
                 >
-                  <div className="relative aspect-[3/4] overflow-hidden rounded-3xl border border-white/10 mb-6">
+                  <div className="relative w-full aspect-square overflow-hidden rounded-full border border-white/10 mb-6">
                     <img 
                       src={member.image} 
                       alt={member.name} 
-                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700" 
+                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-700" 
                       referrerPolicy="no-referrer" 
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity" />
-                    <div className="absolute bottom-8 left-8">
-                       <h3 className="text-3xl font-bold tracking-tight text-white">{member.name}</h3>
-                       <p className="text-purple-400 font-bold uppercase tracking-widest text-[10px] mt-1">View Profile</p>
-                    </div>
+                    <div className="absolute inset-0 bg-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
+                  <h3 className="text-base md:text-lg font-bold text-white text-center line-clamp-1">{member.name}</h3>
+                  <p className="text-purple-500 font-bold uppercase tracking-widest text-[10px] mt-2 opacity-0 group-hover:opacity-100 transition-opacity">View Profile</p>
                 </motion.div>
               ))}
             </div>
           ) : (
-            <div className={`grid gap-16 md:gap-24 ${members.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+            <div className="flex flex-wrap justify-center gap-12">
               {members.map((member, idx) => (
                 <motion.div
                   key={member.id}
                   initial={{ opacity: 0, y: 40 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.2 }}
-                  className="group cursor-pointer"
+                  transition={{ delay: idx * 0.1 }}
+                  className="group cursor-pointer flex flex-col items-center w-[180px] md:w-[225px]"
                   onClick={() => setSelectedMember(member)}
                 >
-                  <div className="relative aspect-[4/5] overflow-hidden rounded-3xl border border-white/10 mb-10">
+                  <div className="relative w-full aspect-square overflow-hidden rounded-full border border-white/10 mb-6">
                     <img 
                       src={member.image} 
                       alt={member.name} 
-                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700" 
+                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-700" 
                       referrerPolicy="no-referrer" 
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity" />
-                    <div className="absolute bottom-10 left-10">
-                       <h3 className="text-4xl md:text-5xl font-bold tracking-tight text-white">{member.name}</h3>
-                       <p className="text-purple-400 font-bold uppercase tracking-widest text-xs mt-2">View Profile</p>
-                    </div>
+                    <div className="absolute inset-0 bg-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
+                  <h3 className="text-base md:text-lg font-bold text-white text-center line-clamp-1">{member.name}</h3>
+                  <p className="text-purple-500 font-bold uppercase tracking-widest text-[10px] mt-2 opacity-0 group-hover:opacity-100 transition-opacity">View Profile</p>
                 </motion.div>
               ))}
             </div>

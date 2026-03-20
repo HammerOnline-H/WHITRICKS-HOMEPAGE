@@ -148,6 +148,7 @@ export default function AdminPage() {
   
   const [activeTab, setActiveTab] = useState<'home' | 'about' | 'performances' | 'gallery' | 'contact' | 'network'>('home');
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [localContent, setLocalContent] = useState<SiteContent | null>(null);
 
   // Initialize local content
@@ -164,7 +165,8 @@ export default function AdminPage() {
     const path = 'siteContent/main';
     try {
       await setDoc(doc(db, 'siteContent', 'main'), localContent);
-      alert('Updated successfully!');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     } finally {
@@ -187,7 +189,12 @@ export default function AdminPage() {
   const addPerformance = async () => {
     const path = 'performances';
     try {
-      await addDoc(collection(db, path), { category: 'NEW FIELD', repertoires: 'REPERTOIRE LIST', order: performances.length });
+      await addDoc(collection(db, path), { 
+        title: 'NEW PERFORMANCE', 
+        description: 'PERFORMANCE DESCRIPTION', 
+        image: 'https://picsum.photos/seed/perf/800/450',
+        order: performances.length 
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, path);
     }
@@ -264,9 +271,23 @@ export default function AdminPage() {
             <div className="flex items-center justify-between">
               <h2 className="text-3xl font-bold uppercase tracking-tighter">{activeTab} Management</h2>
               {['home', 'about', 'contact'].includes(activeTab) && (
-                <button disabled={saving} className="bg-white text-black px-6 py-2 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-500 hover:text-white transition-all">
-                  <Save size={14} /> {saving ? 'SAVING...' : 'SAVE CHANGES'}
-                </button>
+                <div className="flex items-center gap-4">
+                  <AnimatePresence>
+                    {saveSuccess && (
+                      <motion.span
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest"
+                      >
+                        Saved Successfully!
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                  <button disabled={saving} className="bg-white text-black px-6 py-2 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-500 hover:text-white transition-all">
+                    <Save size={14} /> {saving ? 'SAVING...' : 'SAVE CHANGES'}
+                  </button>
+                </div>
               )}
             </div>
 
@@ -426,36 +447,9 @@ export default function AdminPage() {
 
             {activeTab === 'performances' && (
               <div className="space-y-6">
-                <button type="button" onClick={addPerformance} className="w-full py-4 border border-dashed border-white/10 rounded-2xl text-xs font-bold text-white/30 hover:text-white hover:border-purple-500 transition-all uppercase tracking-widest">+ Add Performance Category</button>
+                <button type="button" onClick={addPerformance} className="w-full py-4 border border-dashed border-white/10 rounded-2xl text-xs font-bold text-white/30 hover:text-white hover:border-purple-500 transition-all uppercase tracking-widest">+ Add Performance</button>
                 {performances.map(p => (
-                  <div key={p.id} className="bg-zinc-900 p-6 rounded-2xl border border-white/5 flex gap-4">
-                    <div className="flex-1 space-y-4">
-                      <input 
-                        value={p.category} 
-                        onChange={async (e) => {
-                          const path = `performances/${p.id}`;
-                          try {
-                            await updateDoc(doc(db, 'performances', p.id), { category: e.target.value });
-                          } catch (err) {
-                            handleFirestoreError(err, OperationType.UPDATE, path);
-                          }
-                        }} 
-                        className="w-full bg-black border border-white/10 rounded-lg px-4 py-2 text-sm font-bold" 
-                      />
-                      <textarea 
-                        value={p.repertoires} 
-                        onChange={async (e) => {
-                          const path = `performances/${p.id}`;
-                          try {
-                            await updateDoc(doc(db, 'performances', p.id), { repertoires: e.target.value });
-                          } catch (err) {
-                            handleFirestoreError(err, OperationType.UPDATE, path);
-                          }
-                        }} 
-                        rows={3} 
-                        className="w-full bg-black border border-white/10 rounded-lg px-4 py-2 text-xs text-white/50 resize-none" 
-                      />
-                    </div>
+                  <div key={p.id} className="bg-zinc-900 p-8 rounded-3xl border border-white/5 space-y-6 relative">
                     <button 
                       type="button" 
                       onClick={async () => {
@@ -466,10 +460,63 @@ export default function AdminPage() {
                           handleFirestoreError(err, OperationType.DELETE, path);
                         }
                       }} 
-                      className="text-white/20 hover:text-red-500 transition-colors self-start"
+                      className="absolute top-4 right-4 text-white/20 hover:text-red-500 transition-colors"
                     >
                       <Trash2 size={18} />
                     </button>
+
+                    <div className="grid md:grid-cols-2 gap-8">
+                      <div className="space-y-4">
+                        <ImageUploader 
+                          label="Performance Image" 
+                          value={p.image} 
+                          onChange={async (val) => {
+                            const path = `performances/${p.id}`;
+                            try {
+                              await updateDoc(doc(db, 'performances', p.id), { image: val });
+                            } catch (err) {
+                              handleFirestoreError(err, OperationType.UPDATE, path);
+                            }
+                          }} 
+                          aspectRatio={16/9} 
+                        />
+                      </div>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-white/30 uppercase">Title</label>
+                          <input 
+                            value={p.title} 
+                            onChange={async (e) => {
+                              const path = `performances/${p.id}`;
+                              try {
+                                await updateDoc(doc(db, 'performances', p.id), { title: e.target.value });
+                              } catch (err) {
+                                handleFirestoreError(err, OperationType.UPDATE, path);
+                              }
+                            }} 
+                            className="w-full bg-black border border-white/10 rounded-lg px-4 py-2 text-sm font-bold" 
+                            placeholder="Performance Title"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-white/30 uppercase">Description</label>
+                          <textarea 
+                            value={p.description} 
+                            onChange={async (e) => {
+                              const path = `performances/${p.id}`;
+                              try {
+                                await updateDoc(doc(db, 'performances', p.id), { description: e.target.value });
+                              } catch (err) {
+                                handleFirestoreError(err, OperationType.UPDATE, path);
+                              }
+                            }} 
+                            rows={4} 
+                            className="w-full bg-black border border-white/10 rounded-lg px-4 py-2 text-xs text-white/50 resize-none" 
+                            placeholder="Performance Description"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -478,7 +525,84 @@ export default function AdminPage() {
             {activeTab === 'gallery' && (
               <div className="space-y-6">
                 <div className="flex gap-4">
-                  <button type="button" onClick={addGallery} className="flex-1 py-4 border border-dashed border-white/10 rounded-2xl text-xs font-bold text-white/30 hover:text-white hover:border-purple-500 transition-all uppercase tracking-widest">+ Add Gallery Photo</button>
+                  <div 
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.currentTarget.classList.add('border-purple-500', 'bg-purple-500/5');
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.currentTarget.classList.remove('border-purple-500', 'bg-purple-500/5');
+                    }}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.currentTarget.classList.remove('border-purple-500', 'bg-purple-500/5');
+                      
+                      const files = Array.from(e.dataTransfer.files);
+                      const imageFiles = files.filter(f => f.type.startsWith('image/'));
+                      
+                      if (imageFiles.length === 0) return;
+
+                      const path = 'gallery';
+                      try {
+                        for (const file of imageFiles) {
+                          const reader = new FileReader();
+                          reader.onload = async (event) => {
+                            const base64 = event.target?.result as string;
+                            await addDoc(collection(db, path), {
+                              imageUrl: base64,
+                              description: file.name.split('.')[0],
+                              order: gallery.length
+                            });
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      } catch (err) {
+                        handleFirestoreError(err, OperationType.CREATE, path);
+                      }
+                    }}
+                    className="flex-1 py-12 border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center gap-4 transition-all group cursor-pointer hover:border-purple-500/50"
+                  >
+                    <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-white/20 group-hover:text-purple-500 transition-colors">
+                      <Upload size={32} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-bold uppercase tracking-widest text-white/40 group-hover:text-white transition-colors">Drag & Drop Photos Here</p>
+                      <p className="text-[10px] text-white/20 mt-1 uppercase tracking-widest">Multiple files supported</p>
+                    </div>
+                    <input 
+                      type="file" 
+                      multiple 
+                      accept="image/*" 
+                      className="hidden" 
+                      id="gallery-upload"
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        const path = 'gallery';
+                        try {
+                          for (const file of files) {
+                            const reader = new FileReader();
+                            reader.onload = async (event) => {
+                              const base64 = event.target?.result as string;
+                              await addDoc(collection(db, path), {
+                                imageUrl: base64,
+                                description: file.name.split('.')[0],
+                                order: gallery.length
+                              });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        } catch (err) {
+                          handleFirestoreError(err, OperationType.CREATE, path);
+                        }
+                      }}
+                    />
+                    <label htmlFor="gallery-upload" className="mt-2 px-6 py-2 bg-white/5 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors cursor-pointer">Or Browse Files</label>
+                  </div>
+                  
                   <button 
                     type="button" 
                     onClick={async () => {
@@ -495,12 +619,12 @@ export default function AdminPage() {
                         handleFirestoreError(err, OperationType.CREATE, path);
                       }
                     }} 
-                    className="px-6 py-4 bg-purple-600/20 text-purple-400 rounded-2xl text-xs font-bold hover:bg-purple-600 hover:text-white transition-all uppercase tracking-widest"
+                    className="px-6 py-4 bg-purple-600/20 text-purple-400 rounded-2xl text-xs font-bold hover:bg-purple-600 hover:text-white transition-all uppercase tracking-widest self-start"
                   >
-                    Seed 30 Photos
+                    Seed 30
                   </button>
                 </div>
-                <div className="grid md:grid-cols-2 gap-6">
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {gallery.map(g => (
                     <div key={g.id} className="bg-zinc-900 p-6 rounded-2xl border border-white/5 space-y-4">
                       <div className="aspect-video rounded-lg overflow-hidden bg-black">
@@ -555,6 +679,10 @@ export default function AdminPage() {
 
             {activeTab === 'contact' && (
               <div className="grid gap-6 bg-zinc-900/50 p-8 rounded-3xl border border-white/5">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Section Title (e.g. Let's Connect.)</label>
+                  <input value={localContent.contact.title} onChange={e => updateLocal('contact.title', e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500" placeholder="Let's Connect." />
+                </div>
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Email</label>
@@ -569,9 +697,25 @@ export default function AdminPage() {
                   <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Address</label>
                   <input value={localContent.contact.address} onChange={e => updateLocal('contact.address', e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">YouTube URL</label>
-                  <input value={localContent.contact.youtube} onChange={e => updateLocal('contact.youtube', e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500" />
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">YouTube URL</label>
+                    <input value={localContent.contact.youtube} onChange={e => updateLocal('contact.youtube', e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Instagram URL</label>
+                    <input value={localContent.contact.instagram} onChange={e => updateLocal('contact.instagram', e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500" />
+                  </div>
+                </div>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Naver Blog URL</label>
+                    <input value={localContent.contact.naverBlog} onChange={e => updateLocal('contact.naverBlog', e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Naver Place URL</label>
+                    <input value={localContent.contact.naverPlace} onChange={e => updateLocal('contact.naverPlace', e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500" />
+                  </div>
                 </div>
               </div>
             )}
