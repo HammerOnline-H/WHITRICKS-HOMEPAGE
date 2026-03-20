@@ -13,8 +13,9 @@ service cloud.firestore {
     //
     // Collection: performances/{id}
     // Fields:
-    //   - category: string (required, < 100 chars)
-    //   - repertoires: string (required, < 5000 chars)
+    //   - title: string (required, < 200 chars)
+    //   - description: string (required, < 5000 chars)
+    //   - image: string (required, valid URL)
     //   - order: number (required)
     //
     // Collection: gallery/{id}
@@ -74,8 +75,9 @@ service cloud.firestore {
     }
 
     function isValidPerformance(data) {
-      return data.category is string && data.category.size() < 100 &&
-             data.repertoires is string && data.repertoires.size() < 5000 &&
+      return data.title is string && data.title.size() < 200 &&
+             data.description is string && data.description.size() < 5000 &&
+             isValidUrl(data.image) &&
              data.order is number;
     }
 

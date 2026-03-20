@@ -6,7 +6,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../lib/utils';
 
 export default function Navbar() {
-  const { content } = useSiteContent();
+  const { content, loading } = useSiteContent();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
@@ -16,6 +16,8 @@ export default function Navbar() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  if (loading || !content) return null;
 
   const navLinks = [
     { name: 'Home', href: '#home' },

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { doc, updateDoc, collection, addDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, addDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { db, logout } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { useAuth } from '../hooks/useAuth';
@@ -186,10 +186,13 @@ export default function AdminPage() {
 
   const handleUpdateSite = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!localContent) return;
     setSaving(true);
     const path = 'siteContent/main';
     try {
+      console.log('Saving site content to Firestore...', localContent);
       await setDoc(doc(db, 'siteContent', 'main'), localContent);
+      console.log('Site content saved successfully!');
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 1000);
     } catch (err) {
@@ -200,8 +203,9 @@ export default function AdminPage() {
   };
 
   const updateLocal = (path: string, val: any) => {
+    if (!localContent) return;
     const keys = path.split('.');
-    const newContent = { ...localContent };
+    const newContent = JSON.parse(JSON.stringify(localContent));
     let current: any = newContent;
     for (let i = 0; i < keys.length - 1; i++) {
       current = current[keys[i]];
@@ -611,16 +615,18 @@ export default function AdminPage() {
                         const path = 'gallery';
                         try {
                           for (const file of files) {
-                            const reader = new FileReader();
-                            reader.onload = async (event) => {
-                              const base64 = event.target?.result as string;
-                              await addDoc(collection(db, path), {
-                                imageUrl: base64,
-                                description: file.name.split('.')[0],
-                                order: gallery.length
-                              });
-                            };
-                            reader.readAsDataURL(file);
+                            const base64 = await new Promise<string>((resolve, reject) => {
+                              const reader = new FileReader();
+                              reader.onload = (event) => resolve(event.target?.result as string);
+                              reader.onerror = (err) => reject(err);
+                              reader.readAsDataURL(file);
+                            });
+
+                            await addDoc(collection(db, path), {
+                              imageUrl: base64,
+                              description: file.name.split('.')[0],
+                              order: gallery.length
+                            });
                           }
                         } catch (err) {
                           handleFirestoreError(err, OperationType.CREATE, path);
@@ -635,13 +641,16 @@ export default function AdminPage() {
                     onClick={async () => {
                       const path = 'gallery';
                       try {
+                        const batch = writeBatch(db);
                         for(let i=0; i<30; i++) {
-                          await addDoc(collection(db, path), { 
+                          const newDocRef = doc(collection(db, path));
+                          batch.set(newDocRef, { 
                             imageUrl: `https://picsum.photos/seed/magic_seed_${Date.now()}_${i}/800/${Math.floor(Math.random() * 400) + 600}`, 
                             description: `Sample Magic Photo ${i+1}`, 
                             order: gallery.length + i 
                           });
                         }
+                        await batch.commit();
                       } catch (err) {
                         handleFirestoreError(err, OperationType.CREATE, path);
                       }

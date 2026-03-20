@@ -48,7 +48,7 @@ const DEFAULT_CONTENT: SiteContent = {
 };
 
 export function useSiteContent() {
-  const [content, setContent] = useState<SiteContent>(DEFAULT_CONTENT);
+  const [content, setContent] = useState<SiteContent | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -63,15 +63,18 @@ export function useSiteContent() {
             handleFirestoreError(err, OperationType.WRITE, path);
           });
         }
+        setContent(DEFAULT_CONTENT);
       }
       setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, path);
+      setContent(DEFAULT_CONTENT);
+      setLoading(false);
     });
     return unsub;
   }, []);
 
-  return { content, loading };
+  return { content: content as SiteContent, loading };
 }
 
 export function usePerformances() {
