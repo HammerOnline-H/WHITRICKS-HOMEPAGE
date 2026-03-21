@@ -1,12 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc, collection, addDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
-import { db, logout } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, logout, storage } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { useAuth } from '../hooks/useAuth';
 import { useSiteContent, usePerformances, useGallery, usePartners, useMembers } from '../hooks/useData';
 import { Navigate, Link } from 'react-router-dom';
-import { LayoutDashboard, Users, Sparkles, Settings, LogOut, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Share2, Upload, Crop, Video } from 'lucide-react';
+import { LayoutDashboard, Users, Sparkles, Settings, LogOut, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Share2, Upload, Crop, Video, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Performance, GalleryItem, Partner, SiteContent, Member } from '../types';
 import Cropper from 'react-easy-crop';
@@ -37,42 +38,89 @@ function LocalInput({ value, onSave, className, placeholder, textarea = false, r
   );
 }
 
+async function uploadFile(file: File): Promise<string> {
+  const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}-${file.name}`;
+  const storageRef = ref(storage, fileName);
+  await uploadBytes(storageRef, file);
+  return await getDownloadURL(storageRef);
+}
+
 function ImageUploader({ label, value, onChange, aspectRatio }: { label: string, value: string, onChange: (val: string) => void, aspectRatio?: number }) {
   const [image, setImage] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [showCropper, setShowCropper] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const onCropComplete = useCallback((_area: any, pixels: any) => {
     setCroppedAreaPixels(pixels);
   }, []);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadToStorage = async (dataUrl: string) => {
+    setUploading(true);
+    try {
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+      const file = new File([blob], "cropped.png", { type: "image/png" });
+      const downloadUrl = await uploadFile(file);
+      onChange(downloadUrl);
+    } catch (error) {
+      console.error('Upload failed:', error);
+      alert('이미지 업로드에 실패했습니다.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
       const reader = new FileReader();
-      reader.addEventListener('load', () => {
+      reader.addEventListener('load', async () => {
         const result = reader.result as string;
         setImage(result);
-        // We don't automatically show cropper anymore, just update the preview
-        onChange(result);
+        setShowCropper(true);
       });
-      reader.readAsDataURL(e.target.files[0]);
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleStartCrop = () => {
+  const handleStartCrop = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (value) {
-      setImage(value);
-      setShowCropper(true);
+      setUploading(true);
+      try {
+        console.log('Starting crop for:', value);
+        // Try to fetch the image to avoid CORS issues with the cropper
+        const response = await fetch(value, { mode: 'cors' });
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setImage(reader.result as string);
+          setShowCropper(true);
+          setUploading(false);
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        console.warn('Failed to fetch image for cropping, falling back to direct URL:', err);
+        setImage(value);
+        setShowCropper(true);
+        setUploading(false);
+      }
+    } else {
+      alert('이미지가 설정되어 있지 않습니다.');
     }
   };
 
-  const showCroppedImage = async () => {
+  const showCroppedImage = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     try {
       const croppedImage = await getCroppedImg(image!, croppedAreaPixels);
       if (croppedImage) {
-        onChange(croppedImage);
+        await uploadToStorage(croppedImage);
         setShowCropper(false);
         setImage(null);
       }
@@ -85,8 +133,13 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
     <div className="space-y-4">
       <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">{label}</label>
       <div className="flex items-center gap-4">
-        <div className="min-w-[80px] h-20 rounded-xl bg-black border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center p-2">
+        <div className="min-w-[80px] h-20 rounded-xl bg-black border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center p-2 relative">
           {value ? <img src={value} className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" /> : <div className="w-full h-full flex items-center justify-center text-white/10"><ImageIcon size={24} /></div>}
+          {uploading && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+              <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
         </div>
         <div className="flex-1 space-y-2">
           <input 
@@ -97,15 +150,18 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
             className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500"
           />
           <div className="flex gap-2">
-            <label className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg cursor-pointer transition-colors text-[10px] font-bold uppercase tracking-widest">
+            <label className={cn(
+              "flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg cursor-pointer transition-colors text-[10px] font-bold uppercase tracking-widest",
+              uploading && "opacity-50 cursor-not-allowed"
+            )}>
               <Upload size={14} />
-              Upload
-              <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+              {uploading ? 'Uploading...' : 'Upload'}
+              <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} disabled={uploading} />
             </label>
             <button 
               type="button"
               onClick={handleStartCrop}
-              disabled={!value}
+              disabled={!value || uploading}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded-lg transition-all text-[10px] font-bold uppercase tracking-widest"
             >
               <Crop size={14} />
@@ -151,8 +207,37 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
             </div>
 
             <div className="flex gap-4">
-              <button onClick={() => setShowCropper(false)} className="px-10 py-4 bg-white/5 hover:bg-white/10 rounded-full font-bold text-xs uppercase tracking-widest transition-colors">Cancel</button>
-              <button onClick={showCroppedImage} className="px-10 py-4 bg-purple-600 hover:bg-purple-700 rounded-full font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all">
+              <button 
+                type="button" 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowCropper(false);
+                }} 
+                className="px-10 py-4 bg-white/5 hover:bg-white/10 rounded-full font-bold text-xs uppercase tracking-widest transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (image) {
+                    await uploadToStorage(image);
+                    setShowCropper(false);
+                    setImage(null);
+                  }
+                }} 
+                className="px-10 py-4 bg-white/10 hover:bg-white/20 rounded-full font-bold text-xs uppercase tracking-widest transition-colors"
+              >
+                Use Original
+              </button>
+              <button 
+                type="button" 
+                onClick={showCroppedImage} 
+                className="px-10 py-4 bg-purple-600 hover:bg-purple-700 rounded-full font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all"
+              >
                 <Crop size={14} /> Apply Crop
               </button>
             </div>
@@ -171,32 +256,112 @@ export default function AdminPage() {
   const { partners, loading: partnersLoading } = usePartners();
   const { members, loading: membersLoading } = useMembers();
   
-  const [activeTab, setActiveTab] = useState<'home' | 'about' | 'performances' | 'gallery' | 'contact' | 'network'>('home');
+  const [localContent, setLocalContent] = useState<SiteContent | null>(null);
+  const [localMembers, setLocalMembers] = useState<Member[]>([]);
+  const [localPerformances, setLocalPerformances] = useState<Performance[]>([]);
+  const [localPartners, setLocalPartners] = useState<Partner[]>([]);
+  const [localGallery, setLocalGallery] = useState<GalleryItem[]>([]);
+  const [activeTab, setActiveTab] = useState('home');
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [localContent, setLocalContent] = useState<SiteContent | null>(null);
+
+  const [deletedMembers, setDeletedMembers] = useState<string[]>([]);
+  const [deletedPerformances, setDeletedPerformances] = useState<string[]>([]);
+  const [deletedPartners, setDeletedPartners] = useState<string[]>([]);
+  const [deletedGallery, setDeletedGallery] = useState<string[]>([]);
 
   // Initialize local content
   React.useEffect(() => {
     if (content && !localContent) setLocalContent(content);
-  }, [content]);
+  }, [content, localContent]);
+
+  useEffect(() => {
+    if (members.length > 0 && localMembers.length === 0) {
+      setLocalMembers(members);
+    }
+  }, [members, localMembers]);
+
+  useEffect(() => {
+    if (performances.length > 0 && localPerformances.length === 0) {
+      setLocalPerformances(performances);
+    }
+  }, [performances, localPerformances]);
+
+  useEffect(() => {
+    if (partners.length > 0 && localPartners.length === 0) {
+      setLocalPartners(partners);
+    }
+  }, [partners, localPartners]);
+
+  useEffect(() => {
+    if (gallery.length > 0 && localGallery.length === 0) {
+      setLocalGallery(gallery);
+    }
+  }, [gallery, localGallery]);
 
   if (authLoading || contentLoading || perfLoading || galleryLoading || partnersLoading || membersLoading || !localContent) return null;
   if (!user || !isAdmin) return <Navigate to="/login" />;
 
   const handleUpdateSite = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!localContent) return;
+    console.log('Manual save triggered for tab:', activeTab);
     setSaving(true);
-    const path = 'siteContent/main';
     try {
-      console.log('Saving site content to Firestore...', localContent);
-      await setDoc(doc(db, 'siteContent', 'main'), localContent);
-      console.log('Site content saved successfully!');
+      const batch = writeBatch(db);
+
+      if (['home', 'about', 'contact'].includes(activeTab)) {
+        if (localContent) {
+          batch.set(doc(db, 'siteContent', 'main'), localContent);
+        }
+        
+        if (activeTab === 'about') {
+          localMembers.forEach(m => {
+            const { id, ...data } = m;
+            batch.set(doc(db, 'members', id), data);
+          });
+          deletedMembers.forEach(id => {
+            batch.delete(doc(db, 'members', id));
+          });
+        }
+      } else if (activeTab === 'performances') {
+        localPerformances.forEach(p => {
+          const { id, ...data } = p;
+          batch.set(doc(db, 'performances', id), data);
+        });
+        deletedPerformances.forEach(id => {
+          batch.delete(doc(db, 'performances', id));
+        });
+      } else if (activeTab === 'gallery') {
+        localGallery.forEach(g => {
+          const { id, ...data } = g;
+          batch.set(doc(db, 'gallery', id), data);
+        });
+        deletedGallery.forEach(id => {
+          batch.delete(doc(db, 'gallery', id));
+        });
+      } else if (activeTab === 'network') {
+        localPartners.forEach(p => {
+          const { id, ...data } = p;
+          batch.set(doc(db, 'partners', id), data);
+        });
+        deletedPartners.forEach(id => {
+          batch.delete(doc(db, 'partners', id));
+        });
+      }
+
+      await batch.commit();
+      
+      // Clear deleted lists after successful save
+      if (activeTab === 'about') setDeletedMembers([]);
+      if (activeTab === 'performances') setDeletedPerformances([]);
+      if (activeTab === 'gallery') setDeletedGallery([]);
+      if (activeTab === 'network') setDeletedPartners([]);
+
+      console.log('Changes saved successfully!');
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 1000);
+      setTimeout(() => setSaveSuccess(false), 2000);
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, path);
+      handleFirestoreError(err, OperationType.WRITE, activeTab);
     } finally {
       setSaving(false);
     }
@@ -204,6 +369,7 @@ export default function AdminPage() {
 
   const updateLocal = (path: string, val: any) => {
     if (!localContent) return;
+    console.log(`Updating local state: ${path} = ${val}`);
     const keys = path.split('.');
     const newContent = JSON.parse(JSON.stringify(localContent));
     let current: any = newContent;
@@ -215,42 +381,53 @@ export default function AdminPage() {
   };
 
   // Collection Handlers
-  const addPerformance = async () => {
-    const path = 'performances';
-    try {
-      await addDoc(collection(db, path), { 
-        title: 'NEW PERFORMANCE', 
-        description: 'PERFORMANCE DESCRIPTION', 
-        image: 'https://picsum.photos/seed/perf/800/450',
-        order: performances.length 
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    }
+  const addPerformance = () => {
+    const newId = doc(collection(db, 'performances')).id;
+    const newItem = { 
+      id: newId,
+      title: 'NEW PERFORMANCE', 
+      description: 'PERFORMANCE DESCRIPTION', 
+      image: 'https://picsum.photos/seed/perf/800/450',
+      order: localPerformances.length 
+    };
+    setLocalPerformances([...localPerformances, newItem]);
   };
-  const addGallery = async () => {
-    const path = 'gallery';
-    try {
-      await addDoc(collection(db, path), { imageUrl: 'https://picsum.photos/seed/new/800/600', description: 'PHOTO DESC', order: gallery.length });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    }
+
+  const addGallery = () => {
+    const newId = doc(collection(db, 'gallery')).id;
+    const newItem = { 
+      id: newId,
+      imageUrl: 'https://picsum.photos/seed/new/800/600', 
+      description: 'PHOTO DESC', 
+      order: localGallery.length 
+    };
+    setLocalGallery([...localGallery, newItem]);
   };
-  const addPartner = async () => {
-    const path = 'partners';
-    try {
-      await addDoc(collection(db, path), { name: 'PARTNER NAME', logo: 'https://picsum.photos/seed/logo/200/200', description: 'DESC', order: partners.length });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    }
+
+  const addPartner = () => {
+    const newId = doc(collection(db, 'partners')).id;
+    const newItem = { 
+      id: newId,
+      name: 'PARTNER NAME', 
+      logo: 'https://picsum.photos/seed/logo/200/200', 
+      description: 'DESC', 
+      order: localPartners.length 
+    };
+    setLocalPartners([...localPartners, newItem]);
   };
-  const addMember = async () => {
-    const path = 'members';
-    try {
-      await addDoc(collection(db, path), { name: 'NEW MEMBER', bio: 'BIO TEXT', image: 'https://picsum.photos/seed/member/400/500', videoUrl: '', links: [], order: members.length });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    }
+
+  const addMember = () => {
+    const newId = doc(collection(db, 'members')).id;
+    const newItem = { 
+      id: newId,
+      name: 'NEW MEMBER', 
+      bio: 'BIO TEXT', 
+      image: 'https://picsum.photos/seed/member/400/500', 
+      videoUrl: '', 
+      links: [], 
+      order: localMembers.length 
+    };
+    setLocalMembers([...localMembers, newItem]);
   };
 
   return (
@@ -271,6 +448,7 @@ export default function AdminPage() {
             { id: 'network', icon: Settings, label: 'Network' },
           ].map((tab) => (
             <button
+              type="button"
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
@@ -288,7 +466,7 @@ export default function AdminPage() {
           <Link to="/" className="flex items-center gap-3 px-4 py-3 text-xs text-white/50 hover:text-white">
             <ArrowLeft size={16} /> View Website
           </Link>
-          <button onClick={() => logout()} className="w-full flex items-center gap-3 px-4 py-3 text-xs text-red-400 hover:bg-red-400/10 rounded-xl">
+          <button type="button" onClick={() => logout()} className="w-full flex items-center gap-3 px-4 py-3 text-xs text-red-400 hover:bg-red-400/10 rounded-xl">
             <LogOut size={16} /> Sign Out
           </button>
         </div>
@@ -296,10 +474,18 @@ export default function AdminPage() {
 
       <main className="flex-1 p-8 md:p-12 overflow-y-auto max-h-screen">
         <div className="max-w-4xl mx-auto">
-          <form onSubmit={handleUpdateSite} className="space-y-12">
+          <form 
+            onSubmit={handleUpdateSite} 
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+                e.preventDefault();
+              }
+            }}
+            className="space-y-12"
+          >
             <div className="flex items-center justify-between">
               <h2 className="text-3xl font-bold uppercase tracking-tighter">{activeTab} Management</h2>
-              {['home', 'about', 'contact'].includes(activeTab) && (
+              {['home', 'about', 'performances', 'gallery', 'contact', 'network'].includes(activeTab) && (
                 <div className="flex items-center gap-4">
                   <AnimatePresence>
                     {saveSuccess && (
@@ -313,7 +499,7 @@ export default function AdminPage() {
                       </motion.span>
                     )}
                   </AnimatePresence>
-                  <button disabled={saving} className="bg-white text-black px-6 py-2 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-500 hover:text-white transition-all">
+                  <button type="submit" disabled={saving} className="bg-white text-black px-6 py-2 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-500 hover:text-white transition-all">
                     <Save size={14} /> {saving ? 'SAVING...' : 'SAVE'}
                   </button>
                 </div>
@@ -332,6 +518,12 @@ export default function AdminPage() {
                 </div>
                 <ImageUploader label="Team Logo" value={localContent.home.logo || ''} onChange={val => updateLocal('home.logo', val)} aspectRatio={undefined} />
                 <ImageUploader label="Hero Background Image" value={localContent.home.bgImage} onChange={val => updateLocal('home.bgImage', val)} aspectRatio={16/9} />
+                
+                <div className="pt-8 border-t border-white/5 flex justify-end">
+                  <button type="submit" disabled={saving} className="bg-purple-600 text-white px-10 py-4 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-600/20">
+                    <Save size={14} /> {saving ? 'SAVING...' : 'SAVE HOME CHANGES'}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -355,22 +547,21 @@ export default function AdminPage() {
                       </button>
                       <button 
                         type="button" 
-                        onClick={async () => {
-                          const path = 'members';
-                          try {
-                            for(let i=0; i<5; i++) {
-                              await addDoc(collection(db, path), {
-                                name: `Member ${members.length + i + 1}`,
-                                bio: `This is a sample bio for member ${members.length + i + 1}. They are a key part of the WHITRICKS team.`,
-                                image: `https://picsum.photos/seed/member_${Date.now()}_${i}/400/500`,
-                                videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-                                links: ['Instagram', 'Portfolio'],
-                                order: members.length + i
-                              });
-                            }
-                          } catch (err) {
-                            handleFirestoreError(err, OperationType.CREATE, path);
+                        onClick={() => {
+                          const newItems: Member[] = [];
+                          for(let i=0; i<5; i++) {
+                            const newId = doc(collection(db, 'members')).id;
+                            newItems.push({
+                              id: newId,
+                              name: `Member ${localMembers.length + i + 1}`,
+                              bio: `This is a sample bio for member ${localMembers.length + i + 1}. They are a key part of the WHITRICKS team.`,
+                              image: `https://picsum.photos/seed/member_${Date.now()}_${i}/400/500`,
+                              videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+                              links: ['Instagram', 'Portfolio'],
+                              order: localMembers.length + i
+                            });
                           }
+                          setLocalMembers(prev => [...prev, ...newItems]);
                         }}
                         className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest"
                       >
@@ -380,17 +571,14 @@ export default function AdminPage() {
                   </div>
 
                   <div className="grid md:grid-cols-2 gap-8">
-                    {members.map((member, idx) => (
+                    {localMembers.map((member, idx) => (
                       <div key={member.id} className="bg-zinc-900/50 p-8 rounded-3xl border border-white/5 space-y-6 relative group">
                         <button 
                           type="button"
-                          onClick={async () => {
-                            const path = `members/${member.id}`;
-                            try {
-                              await deleteDoc(doc(db, 'members', member.id));
-                            } catch (err) {
-                              handleFirestoreError(err, OperationType.DELETE, path);
-                            }
+                          onClick={() => {
+                            if (!confirm('정말 삭제하시겠습니까?')) return;
+                            setDeletedMembers(prev => [...prev, member.id]);
+                            setLocalMembers(prev => prev.filter(m => m.id !== member.id));
                           }}
                           className="absolute top-4 right-4 text-white/20 hover:text-red-500 transition-colors"
                         >
@@ -404,12 +592,7 @@ export default function AdminPage() {
                           <LocalInput 
                             value={member.name} 
                             onSave={async (val: string) => {
-                              const path = `members/${member.id}`;
-                              try {
-                                await updateDoc(doc(db, 'members', member.id), { name: val });
-                              } catch (err) {
-                                handleFirestoreError(err, OperationType.UPDATE, path);
-                              }
+                              setLocalMembers(prev => prev.map(m => m.id === member.id ? { ...m, name: val } : m));
                             }} 
                             className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-sm" 
                           />
@@ -421,12 +604,7 @@ export default function AdminPage() {
                             value={member.bio} 
                             textarea
                             onSave={async (val: string) => {
-                              const path = `members/${member.id}`;
-                              try {
-                                await updateDoc(doc(db, 'members', member.id), { bio: val });
-                              } catch (err) {
-                                handleFirestoreError(err, OperationType.UPDATE, path);
-                              }
+                              setLocalMembers(prev => prev.map(m => m.id === member.id ? { ...m, bio: val } : m));
                             }} 
                             rows={6} 
                             className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-sm resize-none" 
@@ -436,13 +614,8 @@ export default function AdminPage() {
                         <ImageUploader 
                           label="Profile Image" 
                           value={member.image} 
-                          onChange={async (val) => {
-                            const path = `members/${member.id}`;
-                            try {
-                              await updateDoc(doc(db, 'members', member.id), { image: val });
-                            } catch (err) {
-                              handleFirestoreError(err, OperationType.UPDATE, path);
-                            }
+                          onChange={(val) => {
+                            setLocalMembers(prev => prev.map(m => m.id === member.id ? { ...m, image: val } : m));
                           }} 
                           aspectRatio={4/5} 
                         />
@@ -455,12 +628,7 @@ export default function AdminPage() {
                               <LocalInput 
                                 value={member.videoUrl} 
                                 onSave={async (val: string) => {
-                                  const path = `members/${member.id}`;
-                                  try {
-                                    await updateDoc(doc(db, 'members', member.id), { videoUrl: val });
-                                  } catch (err) {
-                                    handleFirestoreError(err, OperationType.UPDATE, path);
-                                  }
+                                  setLocalMembers(prev => prev.map(m => m.id === member.id ? { ...m, videoUrl: val } : m));
                                 }} 
                                 className="w-full bg-black border border-white/10 rounded-lg pl-10 pr-3 py-2 text-sm" 
                                 placeholder="YouTube/Vimeo URL"
@@ -471,6 +639,12 @@ export default function AdminPage() {
                       </div>
                     ))}
                   </div>
+
+                  <div className="pt-12 border-t border-white/5 flex justify-end">
+                    <button type="submit" disabled={saving} className="bg-purple-600 text-white px-10 py-4 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-600/20">
+                      <Save size={14} /> {saving ? 'SAVING...' : 'SAVE ABOUT CHANGES'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -478,17 +652,14 @@ export default function AdminPage() {
             {activeTab === 'performances' && (
               <div className="space-y-6">
                 <button type="button" onClick={addPerformance} className="w-full py-4 border border-dashed border-white/10 rounded-2xl text-xs font-bold text-white/30 hover:text-white hover:border-purple-500 transition-all uppercase tracking-widest">+ Add Performance</button>
-                {performances.map(p => (
+                {localPerformances.map(p => (
                   <div key={p.id} className="bg-zinc-900 p-8 rounded-3xl border border-white/5 space-y-6 relative">
                     <button 
                       type="button" 
-                      onClick={async () => {
-                        const path = `performances/${p.id}`;
-                        try {
-                          await deleteDoc(doc(db, 'performances', p.id));
-                        } catch (err) {
-                          handleFirestoreError(err, OperationType.DELETE, path);
-                        }
+                      onClick={() => {
+                        if (!confirm('정말 삭제하시겠습니까?')) return;
+                        setDeletedPerformances(prev => [...prev, p.id]);
+                        setLocalPerformances(prev => prev.filter(item => item.id !== p.id));
                       }} 
                       className="absolute top-4 right-4 text-white/20 hover:text-red-500 transition-colors"
                     >
@@ -500,13 +671,8 @@ export default function AdminPage() {
                         <ImageUploader 
                           label="Performance Image" 
                           value={p.image} 
-                          onChange={async (val) => {
-                            const path = `performances/${p.id}`;
-                            try {
-                              await updateDoc(doc(db, 'performances', p.id), { image: val });
-                            } catch (err) {
-                              handleFirestoreError(err, OperationType.UPDATE, path);
-                            }
+                          onChange={(val) => {
+                            setLocalPerformances(prev => prev.map(item => item.id === p.id ? { ...item, image: val } : item));
                           }} 
                           aspectRatio={16/9} 
                         />
@@ -517,12 +683,7 @@ export default function AdminPage() {
                           <LocalInput 
                             value={p.title} 
                             onSave={async (val: string) => {
-                              const path = `performances/${p.id}`;
-                              try {
-                                await updateDoc(doc(db, 'performances', p.id), { title: val });
-                              } catch (err) {
-                                handleFirestoreError(err, OperationType.UPDATE, path);
-                              }
+                              setLocalPerformances(prev => prev.map(item => item.id === p.id ? { ...item, title: val } : item));
                             }} 
                             className="w-full bg-black border border-white/10 rounded-lg px-4 py-2 text-sm font-bold" 
                             placeholder="Performance Title"
@@ -534,12 +695,7 @@ export default function AdminPage() {
                             value={p.description} 
                             textarea
                             onSave={async (val: string) => {
-                              const path = `performances/${p.id}`;
-                              try {
-                                await updateDoc(doc(db, 'performances', p.id), { description: val });
-                              } catch (err) {
-                                handleFirestoreError(err, OperationType.UPDATE, path);
-                              }
+                              setLocalPerformances(prev => prev.map(item => item.id === p.id ? { ...item, description: val } : item));
                             }} 
                             rows={4} 
                             className="w-full bg-black border border-white/10 rounded-lg px-4 py-2 text-xs text-white/50 resize-none" 
@@ -550,6 +706,14 @@ export default function AdminPage() {
                     </div>
                   </div>
                 ))}
+
+                {localPerformances.length > 0 && (
+                  <div className="pt-12 border-t border-white/5 flex justify-end">
+                    <button type="submit" disabled={saving} className="bg-purple-600 text-white px-10 py-4 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-600/20">
+                      <Save size={14} /> {saving ? 'SAVING...' : 'SAVE PERFORMANCE CHANGES'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -577,22 +741,21 @@ export default function AdminPage() {
                       
                       if (imageFiles.length === 0) return;
 
-                      const path = 'gallery';
                       try {
+                        const newItems: GalleryItem[] = [];
                         for (const file of imageFiles) {
-                          const reader = new FileReader();
-                          reader.onload = async (event) => {
-                            const base64 = event.target?.result as string;
-                            await addDoc(collection(db, path), {
-                              imageUrl: base64,
-                              description: file.name.split('.')[0],
-                              order: gallery.length
-                            });
-                          };
-                          reader.readAsDataURL(file);
+                          const downloadUrl = await uploadFile(file);
+                          const newId = doc(collection(db, 'gallery')).id;
+                          newItems.push({
+                            id: newId,
+                            imageUrl: downloadUrl,
+                            description: file.name.split('.')[0],
+                            order: localGallery.length + newItems.length
+                          });
                         }
+                        setLocalGallery(prev => [...prev, ...newItems]);
                       } catch (err) {
-                        handleFirestoreError(err, OperationType.CREATE, path);
+                        console.error('Gallery drop upload failed:', err);
                       }
                     }}
                     className="flex-1 py-12 border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center gap-4 transition-all group cursor-pointer hover:border-purple-500/50"
@@ -612,24 +775,21 @@ export default function AdminPage() {
                       id="gallery-upload"
                       onChange={async (e) => {
                         const files = Array.from(e.target.files || []);
-                        const path = 'gallery';
                         try {
+                          const newItems: GalleryItem[] = [];
                           for (const file of files) {
-                            const base64 = await new Promise<string>((resolve, reject) => {
-                              const reader = new FileReader();
-                              reader.onload = (event) => resolve(event.target?.result as string);
-                              reader.onerror = (err) => reject(err);
-                              reader.readAsDataURL(file);
-                            });
-
-                            await addDoc(collection(db, path), {
-                              imageUrl: base64,
+                            const downloadUrl = await uploadFile(file);
+                            const newId = doc(collection(db, 'gallery')).id;
+                            newItems.push({
+                              id: newId,
+                              imageUrl: downloadUrl,
                               description: file.name.split('.')[0],
-                              order: gallery.length
+                              order: localGallery.length + newItems.length
                             });
                           }
+                          setLocalGallery(prev => [...prev, ...newItems]);
                         } catch (err) {
-                          handleFirestoreError(err, OperationType.CREATE, path);
+                          console.error('Gallery input upload failed:', err);
                         }
                       }}
                     />
@@ -638,30 +798,27 @@ export default function AdminPage() {
                   
                   <button 
                     type="button" 
-                    onClick={async () => {
-                      const path = 'gallery';
-                      try {
-                        const batch = writeBatch(db);
-                        for(let i=0; i<30; i++) {
-                          const newDocRef = doc(collection(db, path));
-                          batch.set(newDocRef, { 
-                            imageUrl: `https://picsum.photos/seed/magic_seed_${Date.now()}_${i}/800/${Math.floor(Math.random() * 400) + 600}`, 
-                            description: `Sample Magic Photo ${i+1}`, 
-                            order: gallery.length + i 
-                          });
-                        }
-                        await batch.commit();
-                      } catch (err) {
-                        handleFirestoreError(err, OperationType.CREATE, path);
+                    onClick={() => {
+                      const newItems: GalleryItem[] = [];
+                      for(let i=0; i<30; i++) {
+                        const newId = doc(collection(db, 'gallery')).id;
+                        newItems.push({ 
+                          id: newId,
+                          imageUrl: `https://picsum.photos/seed/magic_seed_${Date.now()}_${i}/800/${Math.floor(Math.random() * 400) + 600}`, 
+                          description: `Sample Magic Photo ${i+1}`, 
+                          order: localGallery.length + i 
+                        });
                       }
+                      setLocalGallery(prev => [...prev, ...newItems]);
                     }} 
                     className="px-6 py-4 bg-purple-600/20 text-purple-400 rounded-2xl text-xs font-bold hover:bg-purple-600 hover:text-white transition-all uppercase tracking-widest self-start"
                   >
                     Seed 30
                   </button>
                 </div>
+
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {gallery.map(g => (
+                  {localGallery.map(g => (
                     <div key={g.id} className="bg-zinc-900 p-6 rounded-2xl border border-white/5 space-y-4">
                       <div className="aspect-video rounded-lg overflow-hidden bg-black">
                         <img src={g.imageUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -669,46 +826,41 @@ export default function AdminPage() {
                       <ImageUploader 
                         label="Gallery Image" 
                         value={g.imageUrl} 
-                        onChange={async (val) => {
-                          const path = `gallery/${g.id}`;
-                          try {
-                            await updateDoc(doc(db, 'gallery', g.id), { imageUrl: val });
-                          } catch (err) {
-                            handleFirestoreError(err, OperationType.UPDATE, path);
-                          }
+                        onChange={(val) => {
+                          setLocalGallery(prev => prev.map(item => item.id === g.id ? { ...item, imageUrl: val } : item));
                         }} 
                       />
-                      <div className="flex gap-2">
+                      <div className="space-y-2">
                         <LocalInput 
                           value={g.description} 
                           onSave={async (val: string) => {
-                            const path = `gallery/${g.id}`;
-                            try {
-                              await updateDoc(doc(db, 'gallery', g.id), { description: val });
-                            } catch (err) {
-                              handleFirestoreError(err, OperationType.UPDATE, path);
-                            }
+                            setLocalGallery(prev => prev.map(item => item.id === g.id ? { ...item, description: val } : item));
                           }} 
-                          className="flex-1 bg-black border border-white/10 rounded-lg px-3 py-2 text-[10px]" 
+                          className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-[10px]" 
                           placeholder="Description" 
                         />
-                        <button 
-                          type="button" 
-                          onClick={async () => {
-                            const path = `gallery/${g.id}`;
-                            try {
-                              await deleteDoc(doc(db, 'gallery', g.id));
-                            } catch (err) {
-                              handleFirestoreError(err, OperationType.DELETE, path);
-                            }
-                          }} 
-                          className="text-white/20 hover:text-red-500"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <div className="flex justify-between items-center pt-2">
+                          <button 
+                            type="button" 
+                            onClick={() => {
+                              if (!confirm('정말 삭제하시겠습니까?')) return;
+                              setDeletedGallery(prev => [...prev, g.id]);
+                              setLocalGallery(prev => prev.filter(item => item.id !== g.id));
+                            }}
+                            className="text-white/20 hover:text-red-500 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest transition-colors"
+                          >
+                            <Trash2 size={14} /> Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div className="pt-12 border-t border-white/5 flex justify-end">
+                  <button type="submit" disabled={saving} className="bg-purple-600 text-white px-10 py-4 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-600/20">
+                    <Save size={14} /> {saving ? 'SAVING...' : 'SAVE GALLERY CHANGES'}
+                  </button>
                 </div>
               </div>
             )}
@@ -753,6 +905,12 @@ export default function AdminPage() {
                     <input value={localContent.contact.naverPlace} onChange={e => updateLocal('contact.naverPlace', e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500" />
                   </div>
                 </div>
+
+                <div className="pt-8 border-t border-white/5 flex justify-end">
+                  <button type="submit" disabled={saving} className="bg-purple-600 text-white px-10 py-4 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-600/20">
+                    <Save size={14} /> {saving ? 'SAVING...' : 'SAVE CONTACT CHANGES'}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -760,8 +918,8 @@ export default function AdminPage() {
               <div className="space-y-6">
                 <button type="button" onClick={addPartner} className="w-full py-4 border border-dashed border-white/10 rounded-2xl text-xs font-bold text-white/30 hover:text-white hover:border-purple-500 transition-all uppercase tracking-widest">+ Add Partner/Network</button>
                 <div className="grid md:grid-cols-2 gap-4">
-                  {partners.map(p => (
-                    <div key={p.id} className="bg-zinc-900 p-6 rounded-2xl border border-white/5 flex gap-4 items-center">
+                  {localPartners.map(p => (
+                    <div key={p.id} className="bg-zinc-900 p-6 rounded-2xl border border-white/5 flex gap-4 items-center relative">
                       <div className="w-16 h-16 rounded-full bg-black p-2 flex-shrink-0">
                         <img src={p.logo} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                       </div>
@@ -769,57 +927,45 @@ export default function AdminPage() {
                         <LocalInput 
                           value={p.name} 
                           onSave={async (val: string) => {
-                            const path = `partners/${p.id}`;
-                            try {
-                              await updateDoc(doc(db, 'partners', p.id), { name: val });
-                            } catch (err) {
-                              handleFirestoreError(err, OperationType.UPDATE, path);
-                            }
+                            setLocalPartners(prev => prev.map(item => item.id === p.id ? { ...item, name: val } : item));
                           }} 
                           className="w-full bg-black border border-white/10 rounded-lg px-3 py-1 text-xs font-bold" 
                         />
                         <LocalInput 
                           value={p.description} 
                           onSave={async (val: string) => {
-                            const path = `partners/${p.id}`;
-                            try {
-                              await updateDoc(doc(db, 'partners', p.id), { description: val });
-                            } catch (err) {
-                              handleFirestoreError(err, OperationType.UPDATE, path);
-                            }
+                            setLocalPartners(prev => prev.map(item => item.id === p.id ? { ...item, description: val } : item));
                           }} 
                           className="w-full bg-black border border-white/10 rounded-lg px-3 py-1 text-[10px] text-white/40" 
                         />
                         <ImageUploader 
                           label="Logo" 
                           value={p.logo} 
-                          onChange={async (val) => {
-                            const path = `partners/${p.id}`;
-                            try {
-                              await updateDoc(doc(db, 'partners', p.id), { logo: val });
-                            } catch (err) {
-                              handleFirestoreError(err, OperationType.UPDATE, path);
-                            }
+                          onChange={(val) => {
+                            setLocalPartners(prev => prev.map(item => item.id === p.id ? { ...item, logo: val } : item));
                           }} 
                           aspectRatio={1} 
                         />
                       </div>
                       <button 
                         type="button" 
-                        onClick={async () => {
-                          const path = `partners/${p.id}`;
-                          try {
-                            await deleteDoc(doc(db, 'partners', p.id));
-                          } catch (err) {
-                            handleFirestoreError(err, OperationType.DELETE, path);
-                          }
+                        onClick={() => {
+                          if (!confirm('정말 삭제하시겠습니까?')) return;
+                          setDeletedPartners(prev => [...prev, p.id]);
+                          setLocalPartners(prev => prev.filter(item => item.id !== p.id));
                         }} 
-                        className="text-white/20 hover:text-red-500"
+                        className="absolute top-4 right-4 text-white/20 hover:text-red-500 transition-colors"
                       >
                         <Trash2 size={16} />
                       </button>
                     </div>
                   ))}
+                </div>
+
+                <div className="pt-12 border-t border-white/5 flex justify-end">
+                  <button type="submit" disabled={saving} className="bg-purple-600 text-white px-10 py-4 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-600/20">
+                    <Save size={14} /> {saving ? 'SAVING...' : 'SAVE NETWORK CHANGES'}
+                  </button>
                 </div>
               </div>
             )}

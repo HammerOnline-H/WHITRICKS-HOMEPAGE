@@ -10,7 +10,8 @@
           "properties": {
             "title": { "type": "string" },
             "slogan": { "type": "string" },
-            "bgImage": { "type": "string" }
+            "bgImage": { "type": "string" },
+            "logo": { "type": "string" }
           }
         },
         "about": {
