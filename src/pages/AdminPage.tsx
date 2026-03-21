@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc, collection, addDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
 import { db, logout, storage } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { useAuth } from '../hooks/useAuth';
@@ -39,10 +39,39 @@ function LocalInput({ value, onSave, className, placeholder, textarea = false, r
 }
 
 async function uploadFile(file: File): Promise<string> {
+  if (!storage) {
+    console.error('Storage not initialized');
+    throw new Error('Firebase Storage is not initialized. Please check your configuration.');
+  }
+  console.log('Uploading file:', file.name, file.size, 'to bucket:', storage.app.options.storageBucket);
   const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}-${file.name}`;
   const storageRef = ref(storage, fileName);
-  await uploadBytes(storageRef, file);
-  return await getDownloadURL(storageRef);
+  try {
+    const result = await uploadBytes(storageRef, file);
+    console.log('Upload successful:', result.metadata.fullPath);
+    return await getDownloadURL(storageRef);
+  } catch (err: any) {
+    console.error('uploadBytes failed:', err);
+    throw new Error(`Upload failed: ${err.message || err}`);
+  }
+}
+
+async function uploadBase64(base64: string): Promise<string> {
+  if (!storage) {
+    console.error('Storage not initialized');
+    throw new Error('Firebase Storage is not initialized. Please check your configuration.');
+  }
+  console.log('Uploading base64 image, length:', base64.length, 'to bucket:', storage.app.options.storageBucket);
+  const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+  const storageRef = ref(storage, fileName);
+  try {
+    const result = await uploadString(storageRef, base64, 'data_url');
+    console.log('Base64 upload successful:', result.metadata.fullPath);
+    return await getDownloadURL(storageRef);
+  } catch (err: any) {
+    console.error('uploadString failed:', err);
+    throw new Error(`Base64 upload failed: ${err.message || err}`);
+  }
 }
 
 function ImageUploader({ label, value, onChange, aspectRatio }: { label: string, value: string, onChange: (val: string) => void, aspectRatio?: number }) {
@@ -60,14 +89,11 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
   const uploadToStorage = async (dataUrl: string) => {
     setUploading(true);
     try {
-      const response = await fetch(dataUrl);
-      const blob = await response.blob();
-      const file = new File([blob], "cropped.png", { type: "image/png" });
-      const downloadUrl = await uploadFile(file);
+      const downloadUrl = await uploadBase64(dataUrl);
       onChange(downloadUrl);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Upload failed:', error);
-      alert('이미지 업로드에 실패했습니다.');
+      alert(`이미지 업로드에 실패했습니다: ${error.message || error}`);
     } finally {
       setUploading(false);
     }
@@ -76,6 +102,10 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
+      if (file.size > 15 * 1024 * 1024) {
+        alert('파일이 너무 큽니다. 15MB 이하의 이미지를 사용해주세요.');
+        return;
+      }
       const reader = new FileReader();
       reader.addEventListener('load', async () => {
         const result = reader.result as string;
@@ -754,21 +784,21 @@ export default function AdminPage() {
 
                       setGalleryUploading(true);
                       try {
-                        const newItems: GalleryItem[] = [];
-                        for (const file of imageFiles) {
+                        const uploadPromises = imageFiles.map(async (file, idx) => {
                           const downloadUrl = await uploadFile(file);
                           const newId = doc(collection(db, 'gallery')).id;
-                          newItems.push({
+                          return {
                             id: newId,
                             imageUrl: downloadUrl,
                             description: file.name.split('.')[0],
-                            order: localGallery.length + newItems.length
-                          });
-                        }
+                            order: localGallery.length + idx
+                          };
+                        });
+                        const newItems = await Promise.all(uploadPromises);
                         setLocalGallery(prev => [...prev, ...newItems]);
-                      } catch (err) {
+                      } catch (err: any) {
                         console.error('Gallery drop upload failed:', err);
-                        alert('이미지 업로드에 실패했습니다.');
+                        alert(`이미지 업로드에 실패했습니다: ${err.message || err}`);
                       } finally {
                         setGalleryUploading(false);
                       }
@@ -799,21 +829,21 @@ export default function AdminPage() {
                         
                         setGalleryUploading(true);
                         try {
-                          const newItems: GalleryItem[] = [];
-                          for (const file of files) {
+                          const uploadPromises = files.map(async (file, idx) => {
                             const downloadUrl = await uploadFile(file);
                             const newId = doc(collection(db, 'gallery')).id;
-                            newItems.push({
+                            return {
                               id: newId,
                               imageUrl: downloadUrl,
                               description: file.name.split('.')[0],
-                              order: localGallery.length + newItems.length
-                            });
-                          }
+                              order: localGallery.length + idx
+                            };
+                          });
+                          const newItems = await Promise.all(uploadPromises);
                           setLocalGallery(prev => [...prev, ...newItems]);
-                        } catch (err) {
+                        } catch (err: any) {
                           console.error('Gallery input upload failed:', err);
-                          alert('이미지 업로드에 실패했습니다.');
+                          alert(`이미지 업로드에 실패했습니다: ${err.message || err}`);
                         } finally {
                           setGalleryUploading(false);
                         }

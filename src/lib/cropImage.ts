@@ -36,7 +36,25 @@ export default async function getCroppedImg(
   rotation = 0,
   flip = { horizontal: false, vertical: false }
 ): Promise<string | null> {
+  console.log('getCroppedImg started', { pixelCrop, rotation });
   const image = await createImage(imageSrc);
+  
+  // Limit source image size to prevent memory issues
+  const MAX_SOURCE_SIZE = 4096;
+  let sourceWidth = image.width;
+  let sourceHeight = image.height;
+  let scaleX = 1;
+  let scaleY = 1;
+
+  if (sourceWidth > MAX_SOURCE_SIZE || sourceHeight > MAX_SOURCE_SIZE) {
+    const scale = Math.min(MAX_SOURCE_SIZE / sourceWidth, MAX_SOURCE_SIZE / sourceHeight);
+    sourceWidth *= scale;
+    sourceHeight *= scale;
+    scaleX = scale;
+    scaleY = scale;
+    console.log('Downscaling source image for processing', { scale });
+  }
+
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
 
@@ -48,8 +66,8 @@ export default async function getCroppedImg(
 
   // calculate bounding box of the rotated image
   const { width: bBoxWidth, height: bBoxHeight } = rotateSize(
-    image.width,
-    image.height,
+    sourceWidth,
+    sourceHeight,
     rotation
   );
 
@@ -61,15 +79,22 @@ export default async function getCroppedImg(
   ctx.translate(bBoxWidth / 2, bBoxHeight / 2);
   ctx.rotate(rotRad);
   ctx.scale(flip.horizontal ? -1 : 1, flip.vertical ? -1 : 1);
-  ctx.translate(-image.width / 2, -image.height / 2);
+  ctx.translate(-sourceWidth / 2, -sourceHeight / 2);
 
   // draw rotated image
-  ctx.drawImage(image, 0, 0);
+  ctx.drawImage(image, 0, 0, sourceWidth, sourceHeight);
 
   // Create a second canvas for the actual crop
   const cropCanvas = document.createElement('canvas');
-  cropCanvas.width = pixelCrop.width;
-  cropCanvas.height = pixelCrop.height;
+  
+  // Adjust pixelCrop based on source downscaling
+  const targetX = pixelCrop.x * scaleX;
+  const targetY = pixelCrop.y * scaleY;
+  const targetWidth = pixelCrop.width * scaleX;
+  const targetHeight = pixelCrop.height * scaleY;
+
+  cropCanvas.width = targetWidth;
+  cropCanvas.height = targetHeight;
   const cropCtx = cropCanvas.getContext('2d');
 
   if (!cropCtx) {
@@ -79,33 +104,34 @@ export default async function getCroppedImg(
   // Draw the cropped area from the first canvas to the second
   cropCtx.drawImage(
     canvas,
-    pixelCrop.x,
-    pixelCrop.y,
-    pixelCrop.width,
-    pixelCrop.height,
+    targetX,
+    targetY,
+    targetWidth,
+    targetHeight,
     0,
     0,
-    pixelCrop.width,
-    pixelCrop.height
+    targetWidth,
+    targetHeight
   );
 
-  // Resize if too large to stay under Firestore 1MB limit
-  const MAX_DIMENSION = 1200;
-  if (cropCanvas.width > MAX_DIMENSION || cropCanvas.height > MAX_DIMENSION) {
-    const scale = Math.min(MAX_DIMENSION / cropCanvas.width, MAX_DIMENSION / cropCanvas.height);
-    const newWidth = cropCanvas.width * scale;
-    const newHeight = cropCanvas.height * scale;
+  // Final resize if still too large for web use (staying under reasonable limits)
+  const MAX_FINAL_DIMENSION = 1600;
+  if (cropCanvas.width > MAX_FINAL_DIMENSION || cropCanvas.height > MAX_FINAL_DIMENSION) {
+    const scale = Math.min(MAX_FINAL_DIMENSION / cropCanvas.width, MAX_FINAL_DIMENSION / cropCanvas.height);
+    const finalWidth = cropCanvas.width * scale;
+    const finalHeight = cropCanvas.height * scale;
 
     const resizeCanvas = document.createElement('canvas');
-    resizeCanvas.width = newWidth;
-    resizeCanvas.height = newHeight;
+    resizeCanvas.width = finalWidth;
+    resizeCanvas.height = finalHeight;
     const resizeCtx = resizeCanvas.getContext('2d');
     if (resizeCtx) {
-      resizeCtx.drawImage(cropCanvas, 0, 0, newWidth, newHeight);
-      return resizeCanvas.toDataURL('image/jpeg', 0.8);
+      resizeCtx.drawImage(cropCanvas, 0, 0, finalWidth, finalHeight);
+      console.log('Final resize applied');
+      return resizeCanvas.toDataURL('image/jpeg', 0.85);
     }
   }
 
-  // As Base64 string with JPEG compression
-  return cropCanvas.toDataURL('image/jpeg', 0.8);
+  console.log('getCroppedImg finished');
+  return cropCanvas.toDataURL('image/jpeg', 0.85);
 }
