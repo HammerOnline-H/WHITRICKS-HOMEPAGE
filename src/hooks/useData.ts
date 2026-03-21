@@ -37,6 +37,7 @@ const DEFAULT_CONTENT: SiteContent = {
   },
   contact: {
     title: "Let's Connect.",
+    description: "Reach out for bookings, collaborations, or just to say hello. We're always open to new magical opportunities.",
     address: "ADDRESS TEXT",
     phone: "010-0000-0000",
     email: "email@example.com",

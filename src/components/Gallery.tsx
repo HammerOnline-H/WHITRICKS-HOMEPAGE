@@ -15,7 +15,7 @@ export default function Gallery({ data }: { data: GalleryItem[] }) {
           whileInView={{ opacity: 1 }}
           className="text-xs font-bold text-purple-500 uppercase tracking-[0.5em] mb-16 text-center"
         >
-          Activity Gallery
+          GALLERY
         </motion.h2>
 
         {/* Dynamic column count based on photo count */}

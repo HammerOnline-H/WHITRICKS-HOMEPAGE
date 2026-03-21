@@ -3,7 +3,9 @@ export const createImage = (url: string): Promise<HTMLImageElement> =>
     const image = new Image();
     image.addEventListener('load', () => resolve(image));
     image.addEventListener('error', (error) => reject(error));
-    image.setAttribute('crossOrigin', 'anonymous'); // needed to avoid cross-origin issues on CodeSandbox
+    if (!url.startsWith('data:')) {
+      image.setAttribute('crossOrigin', 'anonymous');
+    }
     image.src = url;
   });
 
@@ -64,39 +66,46 @@ export default async function getCroppedImg(
   // draw rotated image
   ctx.drawImage(image, 0, 0);
 
-  // croppedAreaPixels values are bounding box relative
-  // extract the cropped image using these values
-  const data = ctx.getImageData(
+  // Create a second canvas for the actual crop
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = pixelCrop.width;
+  cropCanvas.height = pixelCrop.height;
+  const cropCtx = cropCanvas.getContext('2d');
+
+  if (!cropCtx) {
+    return null;
+  }
+
+  // Draw the cropped area from the first canvas to the second
+  cropCtx.drawImage(
+    canvas,
     pixelCrop.x,
     pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
     pixelCrop.width,
     pixelCrop.height
   );
 
-  // set canvas width to final desired crop size - this will clear existing context
-  canvas.width = pixelCrop.width;
-  canvas.height = pixelCrop.height;
-
-  // paste generated rotate image at the top left corner
-  ctx.putImageData(data, 0, 0);
-
   // Resize if too large to stay under Firestore 1MB limit
   const MAX_DIMENSION = 1200;
-  if (canvas.width > MAX_DIMENSION || canvas.height > MAX_DIMENSION) {
-    const scale = Math.min(MAX_DIMENSION / canvas.width, MAX_DIMENSION / canvas.height);
-    const newWidth = canvas.width * scale;
-    const newHeight = canvas.height * scale;
+  if (cropCanvas.width > MAX_DIMENSION || cropCanvas.height > MAX_DIMENSION) {
+    const scale = Math.min(MAX_DIMENSION / cropCanvas.width, MAX_DIMENSION / cropCanvas.height);
+    const newWidth = cropCanvas.width * scale;
+    const newHeight = cropCanvas.height * scale;
 
     const resizeCanvas = document.createElement('canvas');
     resizeCanvas.width = newWidth;
     resizeCanvas.height = newHeight;
     const resizeCtx = resizeCanvas.getContext('2d');
     if (resizeCtx) {
-      resizeCtx.drawImage(canvas, 0, 0, newWidth, newHeight);
+      resizeCtx.drawImage(cropCanvas, 0, 0, newWidth, newHeight);
       return resizeCanvas.toDataURL('image/jpeg', 0.8);
     }
   }
 
   // As Base64 string with JPEG compression
-  return canvas.toDataURL('image/jpeg', 0.8);
+  return cropCanvas.toDataURL('image/jpeg', 0.8);
 }

@@ -117,6 +117,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
   const showCroppedImage = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setUploading(true);
     try {
       const croppedImage = await getCroppedImg(image!, croppedAreaPixels);
       if (croppedImage) {
@@ -126,6 +127,9 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
       }
     } catch (e) {
       console.error(e);
+      alert('이미지 크롭에 실패했습니다.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -220,6 +224,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
               </button>
               <button 
                 type="button"
+                disabled={uploading}
                 onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -229,16 +234,19 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
                     setImage(null);
                   }
                 }} 
-                className="px-10 py-4 bg-white/10 hover:bg-white/20 rounded-full font-bold text-xs uppercase tracking-widest transition-colors"
+                className="px-10 py-4 bg-white/10 hover:bg-white/20 disabled:opacity-50 rounded-full font-bold text-xs uppercase tracking-widest transition-colors flex items-center gap-2"
               >
+                {uploading && <Loader2 className="animate-spin" size={14} />}
                 Use Original
               </button>
               <button 
                 type="button" 
                 onClick={showCroppedImage} 
-                className="px-10 py-4 bg-purple-600 hover:bg-purple-700 rounded-full font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all"
+                disabled={uploading}
+                className="px-10 py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50 rounded-full font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all"
               >
-                <Crop size={14} /> Apply Crop
+                {uploading ? <Loader2 className="animate-spin" size={14} /> : <Crop size={14} />}
+                {uploading ? 'Processing...' : 'Apply Crop'}
               </button>
             </div>
           </div>
@@ -263,6 +271,7 @@ export default function AdminPage() {
   const [localGallery, setLocalGallery] = useState<GalleryItem[]>([]);
   const [activeTab, setActiveTab] = useState('home');
   const [saving, setSaving] = useState(false);
+  const [galleryUploading, setGalleryUploading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [deletedMembers, setDeletedMembers] = useState<string[]>([]);
@@ -442,7 +451,7 @@ export default function AdminPage() {
           {[
             { id: 'home', icon: LayoutDashboard, label: 'Home' },
             { id: 'about', icon: Users, label: 'About' },
-            { id: 'performances', icon: Sparkles, label: 'Performances' },
+            { id: 'performances', icon: Sparkles, label: 'Contents' },
             { id: 'gallery', icon: ImageIcon, label: 'Gallery' },
             { id: 'contact', icon: Share2, label: 'Contact' },
             { id: 'network', icon: Settings, label: 'Network' },
@@ -484,7 +493,9 @@ export default function AdminPage() {
             className="space-y-12"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-3xl font-bold uppercase tracking-tighter">{activeTab} Management</h2>
+              <h2 className="text-3xl font-bold uppercase tracking-tighter">
+                {activeTab === 'performances' ? 'Contents' : activeTab} Management
+              </h2>
               {['home', 'about', 'performances', 'gallery', 'contact', 'network'].includes(activeTab) && (
                 <div className="flex items-center gap-4">
                   <AnimatePresence>
@@ -710,7 +721,7 @@ export default function AdminPage() {
                 {localPerformances.length > 0 && (
                   <div className="pt-12 border-t border-white/5 flex justify-end">
                     <button type="submit" disabled={saving} className="bg-purple-600 text-white px-10 py-4 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-600/20">
-                      <Save size={14} /> {saving ? 'SAVING...' : 'SAVE PERFORMANCE CHANGES'}
+                      <Save size={14} /> {saving ? 'SAVING...' : 'SAVE CONTENTS CHANGES'}
                     </button>
                   </div>
                 )}
@@ -741,6 +752,7 @@ export default function AdminPage() {
                       
                       if (imageFiles.length === 0) return;
 
+                      setGalleryUploading(true);
                       try {
                         const newItems: GalleryItem[] = [];
                         for (const file of imageFiles) {
@@ -756,15 +768,23 @@ export default function AdminPage() {
                         setLocalGallery(prev => [...prev, ...newItems]);
                       } catch (err) {
                         console.error('Gallery drop upload failed:', err);
+                        alert('이미지 업로드에 실패했습니다.');
+                      } finally {
+                        setGalleryUploading(false);
                       }
                     }}
-                    className="flex-1 py-12 border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center gap-4 transition-all group cursor-pointer hover:border-purple-500/50"
+                    className={cn(
+                      "flex-1 py-12 border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center gap-4 transition-all group cursor-pointer hover:border-purple-500/50",
+                      galleryUploading && "opacity-50 pointer-events-none"
+                    )}
                   >
                     <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-white/20 group-hover:text-purple-500 transition-colors">
-                      <Upload size={32} />
+                      {galleryUploading ? <Loader2 className="animate-spin" size={32} /> : <Upload size={32} />}
                     </div>
                     <div className="text-center">
-                      <p className="text-sm font-bold uppercase tracking-widest text-white/40 group-hover:text-white transition-colors">Drag & Drop Photos Here</p>
+                      <p className="text-sm font-bold uppercase tracking-widest text-white/40 group-hover:text-white transition-colors">
+                        {galleryUploading ? 'Uploading...' : 'Drag & Drop Photos Here'}
+                      </p>
                       <p className="text-[10px] text-white/20 mt-1 uppercase tracking-widest">Multiple files supported</p>
                     </div>
                     <input 
@@ -775,6 +795,9 @@ export default function AdminPage() {
                       id="gallery-upload"
                       onChange={async (e) => {
                         const files = Array.from(e.target.files || []);
+                        if (files.length === 0) return;
+                        
+                        setGalleryUploading(true);
                         try {
                           const newItems: GalleryItem[] = [];
                           for (const file of files) {
@@ -790,6 +813,9 @@ export default function AdminPage() {
                           setLocalGallery(prev => [...prev, ...newItems]);
                         } catch (err) {
                           console.error('Gallery input upload failed:', err);
+                          alert('이미지 업로드에 실패했습니다.');
+                        } finally {
+                          setGalleryUploading(false);
                         }
                       }}
                     />
@@ -870,6 +896,15 @@ export default function AdminPage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Section Title (e.g. Let's Connect.)</label>
                   <input value={localContent.contact.title} onChange={e => updateLocal('contact.title', e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500" placeholder="Let's Connect." />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Description</label>
+                  <textarea 
+                    value={localContent.contact.description} 
+                    onChange={e => updateLocal('contact.description', e.target.value)} 
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-purple-500 min-h-[100px]" 
+                    placeholder="Reach out for bookings, collaborations, or just to say hello..."
+                  />
                 </div>
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-2">

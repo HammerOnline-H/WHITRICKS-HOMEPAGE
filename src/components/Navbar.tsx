@@ -22,7 +22,7 @@ export default function Navbar() {
   const navLinks = [
     { name: 'Home', href: '#home' },
     { name: 'About', href: '#about' },
-    { name: 'Performances', href: '#performances' },
+    { name: 'Contents', href: '#performances' },
     { name: 'Gallery', href: '#gallery' },
     { name: 'Contact', href: '#contact' },
     { name: 'Network', href: '#network' },

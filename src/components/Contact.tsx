@@ -19,7 +19,7 @@ export default function Contact({ data }: { data: SiteContent['contact'] }) {
             <div className="space-y-6">
               <h3 className="text-4xl font-bold tracking-tight">{data.title || "Let's Connect."}</h3>
               <p className="text-white/40 max-w-md leading-relaxed">
-                Reach out for bookings, collaborations, or just to say hello. We're always open to new magical opportunities.
+                {data.description || "Reach out for bookings, collaborations, or just to say hello. We're always open to new magical opportunities."}
               </p>
             </div>
 

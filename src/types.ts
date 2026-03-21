@@ -20,6 +20,7 @@ export interface SiteContent {
   };
   contact: {
     title: string;
+    description: string;
     address: string;
     phone: string;
     email: string;

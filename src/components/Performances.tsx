@@ -10,7 +10,7 @@ export default function Performances({ data }: { data: Performance[] }) {
           whileInView={{ opacity: 1 }}
           className="text-xs font-bold text-purple-500 uppercase tracking-[0.5em] mb-16 text-center"
         >
-          Our Performances
+          CONTENTS
         </motion.h2>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-12">
