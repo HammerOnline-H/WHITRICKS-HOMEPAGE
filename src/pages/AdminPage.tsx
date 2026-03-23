@@ -11,7 +11,7 @@ import { LayoutDashboard, Users, Sparkles, Settings, LogOut, Save, Plus, Trash2,
 import { cn } from '../lib/utils';
 import { Performance, GalleryItem, Partner, SiteContent, Member } from '../types';
 import Cropper from 'react-easy-crop';
-import getCroppedImg from '../lib/cropImage';
+import getCroppedImg, { createImage } from '../lib/cropImage';
 
 function LocalInput({ value, onSave, className, placeholder, textarea = false, rows = 3 }: any) {
   const [localValue, setLocalValue] = React.useState(value);
@@ -97,7 +97,7 @@ async function uploadFile(file: File): Promise<string> {
   if (file.type.startsWith('image/') && file.size > 1024 * 1024) {
     console.log('Compressing image:', file.name, file.size);
     try {
-      fileToUpload = await compressImage(file);
+      fileToUpload = await compressImage(file, 1600, 1600, 0.7); // More aggressive compression
       console.log('Compression successful:', fileToUpload.size);
     } catch (err) {
       console.warn('Compression failed, uploading original:', err);
@@ -113,7 +113,40 @@ async function uploadFile(file: File): Promise<string> {
     return await getDownloadURL(storageRef);
   } catch (err: any) {
     console.error('uploadBytes failed:', err);
+    if (err.code === 'storage/retry-limit-exceeded') {
+      throw new Error('업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나, Firebase Console에서 CORS 설정을 확인해주세요.');
+    }
     throw new Error(`Upload failed: ${err.message || err}`);
+  }
+}
+
+async function compressBase64(base64: string, maxWidth = 1920, maxHeight = 1080, quality = 0.8): Promise<string> {
+  try {
+    const img = await createImage(base64);
+    const canvas = document.createElement('canvas');
+    let width = img.width;
+    let height = img.height;
+
+    if (width > height) {
+      if (width > maxWidth) {
+        height *= maxWidth / width;
+        width = maxWidth;
+      }
+    } else {
+      if (height > maxHeight) {
+        width *= maxHeight / height;
+        height = maxHeight;
+      }
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx?.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', quality);
+  } catch (err) {
+    console.warn('compressBase64 failed, returning original:', err);
+    return base64;
   }
 }
 
@@ -122,15 +155,35 @@ async function uploadBase64(base64: string): Promise<string> {
     console.error('Storage not initialized');
     throw new Error('Firebase Storage is not initialized. Please check your configuration.');
   }
-  console.log('Uploading base64 image, length:', base64.length, 'to bucket:', storage.app.options.storageBucket);
-  const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
-  const storageRef = ref(storage, fileName);
+  
+  console.log('Uploading base64 image, initial length:', base64.length);
+  
   try {
-    const result = await uploadString(storageRef, base64, 'data_url');
+    // Compress if it's likely a large image (rough estimate from base64 length)
+    let processedBase64 = base64;
+    if (base64.length > 1 * 1024 * 1024) { // > 1MB approx
+      console.log('Compressing large base64 image...');
+      processedBase64 = await compressBase64(base64, 1600, 1600, 0.7);
+      console.log('Compression finished, new length:', processedBase64.length);
+    }
+
+    // Convert base64 to Blob for more reliable upload
+    const response = await fetch(processedBase64);
+    const blob = await response.blob();
+    
+    console.log('Converted base64 to blob, size:', blob.size);
+    
+    const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+    const storageRef = ref(storage, fileName);
+    
+    const result = await uploadBytes(storageRef, blob);
     console.log('Base64 upload successful:', result.metadata.fullPath);
     return await getDownloadURL(storageRef);
   } catch (err: any) {
-    console.error('uploadString failed:', err);
+    console.error('uploadBase64 failed:', err);
+    if (err.code === 'storage/retry-limit-exceeded') {
+      throw new Error('이미지 업로드 시간이 초과되었습니다. 파일 크기를 줄이거나, Firebase Console에서 CORS 설정을 확인해주세요.');
+    }
     throw new Error(`Base64 upload failed: ${err.message || err}`);
   }
 }
@@ -151,8 +204,11 @@ function MultiImageUploader({ label, values, onChange, max = 5, aspectRatio }: {
 
       setUploading(true);
       try {
-        const uploadPromises = toUpload.map(file => uploadFile(file));
-        const urls = await Promise.all(uploadPromises);
+        const urls = [];
+        for (const file of toUpload) {
+          const url = await uploadFile(file);
+          urls.push(url);
+        }
         onChange([...values, ...urls]);
       } catch (error: any) {
         console.error('Multi upload failed:', error);
@@ -939,17 +995,18 @@ export default function AdminPage() {
 
                       setGalleryUploading(true);
                       try {
-                        const uploadPromises = imageFiles.map(async (file, idx) => {
+                        const newItems = [];
+                        for (let i = 0; i < imageFiles.length; i++) {
+                          const file = imageFiles[i];
                           const downloadUrl = await uploadFile(file);
                           const newId = doc(collection(db, 'gallery')).id;
-                          return {
+                          newItems.push({
                             id: newId,
                             imageUrl: downloadUrl,
                             description: file.name.split('.')[0],
-                            order: localGallery.length + idx
-                          };
-                        });
-                        const newItems = await Promise.all(uploadPromises);
+                            order: localGallery.length + i
+                          });
+                        }
                         setLocalGallery(prev => [...prev, ...newItems]);
                       } catch (err: any) {
                         console.error('Gallery drop upload failed:', err);
@@ -984,17 +1041,18 @@ export default function AdminPage() {
                         
                         setGalleryUploading(true);
                         try {
-                          const uploadPromises = files.map(async (file, idx) => {
+                          const newItems = [];
+                          for (let i = 0; i < files.length; i++) {
+                            const file = files[i];
                             const downloadUrl = await uploadFile(file);
                             const newId = doc(collection(db, 'gallery')).id;
-                            return {
+                            newItems.push({
                               id: newId,
                               imageUrl: downloadUrl,
                               description: file.name.split('.')[0],
-                              order: localGallery.length + idx
-                            };
-                          });
-                          const newItems = await Promise.all(uploadPromises);
+                              order: localGallery.length + i
+                            });
+                          }
                           setLocalGallery(prev => [...prev, ...newItems]);
                         } catch (err: any) {
                           console.error('Gallery input upload failed:', err);
