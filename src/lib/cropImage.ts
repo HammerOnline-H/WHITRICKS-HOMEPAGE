@@ -40,7 +40,7 @@ export default async function getCroppedImg(
   const image = await createImage(imageSrc);
   
   // Limit source image size to prevent memory issues
-  const MAX_SOURCE_SIZE = 4096;
+  const MAX_SOURCE_SIZE = 2560; // Reduced from 4096
   let sourceWidth = image.width;
   let sourceHeight = image.height;
   let scaleX = 1;
@@ -48,11 +48,11 @@ export default async function getCroppedImg(
 
   if (sourceWidth > MAX_SOURCE_SIZE || sourceHeight > MAX_SOURCE_SIZE) {
     const scale = Math.min(MAX_SOURCE_SIZE / sourceWidth, MAX_SOURCE_SIZE / sourceHeight);
-    sourceWidth *= scale;
-    sourceHeight *= scale;
+    sourceWidth = Math.floor(sourceWidth * scale);
+    sourceHeight = Math.floor(sourceHeight * scale);
     scaleX = scale;
     scaleY = scale;
-    console.log('Downscaling source image for processing', { scale });
+    console.log('Downscaling source image for processing', { scale, sourceWidth, sourceHeight });
   }
 
   const canvas = document.createElement('canvas');
@@ -115,23 +115,37 @@ export default async function getCroppedImg(
   );
 
   // Final resize if still too large for web use (staying under reasonable limits)
-  const MAX_FINAL_DIMENSION = 1600;
+  const MAX_FINAL_DIMENSION = 1280; // Reduced from 1600
   if (cropCanvas.width > MAX_FINAL_DIMENSION || cropCanvas.height > MAX_FINAL_DIMENSION) {
     const scale = Math.min(MAX_FINAL_DIMENSION / cropCanvas.width, MAX_FINAL_DIMENSION / cropCanvas.height);
-    const finalWidth = cropCanvas.width * scale;
-    const finalHeight = cropCanvas.height * scale;
+    const finalWidth = Math.floor(cropCanvas.width * scale);
+    const finalHeight = Math.floor(cropCanvas.height * scale);
 
     const resizeCanvas = document.createElement('canvas');
     resizeCanvas.width = finalWidth;
     resizeCanvas.height = finalHeight;
     const resizeCtx = resizeCanvas.getContext('2d');
     if (resizeCtx) {
+      resizeCtx.imageSmoothingEnabled = true;
+      resizeCtx.imageSmoothingQuality = 'high';
       resizeCtx.drawImage(cropCanvas, 0, 0, finalWidth, finalHeight);
-      console.log('Final resize applied');
-      return resizeCanvas.toDataURL('image/jpeg', 0.85);
+      console.log('Final resize applied', { finalWidth, finalHeight });
+      const dataUrl = resizeCanvas.toDataURL('image/jpeg', 0.8);
+      // Cleanup
+      canvas.width = 0;
+      canvas.height = 0;
+      cropCanvas.width = 0;
+      cropCanvas.height = 0;
+      return dataUrl;
     }
   }
 
   console.log('getCroppedImg finished');
-  return cropCanvas.toDataURL('image/jpeg', 0.85);
+  const finalDataUrl = cropCanvas.toDataURL('image/jpeg', 0.8);
+  // Cleanup
+  canvas.width = 0;
+  canvas.height = 0;
+  cropCanvas.width = 0;
+  cropCanvas.height = 0;
+  return finalDataUrl;
 }

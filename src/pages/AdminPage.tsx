@@ -160,10 +160,11 @@ async function uploadBase64(base64: string): Promise<string> {
   
   try {
     // Compress if it's likely a large image (rough estimate from base64 length)
+    // Skip if it's already small enough (roughly < 800KB)
     let processedBase64 = base64;
-    if (base64.length > 1 * 1024 * 1024) { // > 1MB approx
+    if (base64.length > 1.2 * 1024 * 1024) { 
       console.log('Compressing large base64 image...');
-      processedBase64 = await compressBase64(base64, 1600, 1600, 0.7);
+      processedBase64 = await compressBase64(base64, 1280, 1280, 0.75);
       console.log('Compression finished, new length:', processedBase64.length);
     }
 
@@ -307,13 +308,26 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
         alert('파일이 너무 큽니다. 50MB 이하의 이미지를 사용해주세요.');
         return;
       }
-      const reader = new FileReader();
-      reader.addEventListener('load', async () => {
-        const result = reader.result as string;
-        setImage(result);
+
+      setUploading(true);
+      try {
+        let fileToProcess = file;
+        // Pre-compress if the file is very large to avoid memory issues in the cropper
+        if (file.size > 2 * 1024 * 1024) {
+          console.log('Pre-compressing large file for cropper...');
+          const compressedBlob = await compressImage(file, 2048, 2048, 0.8);
+          fileToProcess = new File([compressedBlob], file.name, { type: 'image/jpeg' });
+        }
+
+        const objectUrl = URL.createObjectURL(fileToProcess);
+        setImage(objectUrl);
         setShowCropper(true);
-      });
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error('File processing failed:', err);
+        alert('파일 처리에 실패했습니다.');
+      } finally {
+        setUploading(false);
+      }
     }
   };
 
@@ -327,17 +341,14 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
         // Try to fetch the image to avoid CORS issues with the cropper
         const response = await fetch(value, { mode: 'cors' });
         const blob = await response.blob();
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setImage(reader.result as string);
-          setShowCropper(true);
-          setUploading(false);
-        };
-        reader.readAsDataURL(blob);
+        const objectUrl = URL.createObjectURL(blob);
+        setImage(objectUrl);
+        setShowCropper(true);
       } catch (err) {
         console.warn('Failed to fetch image for cropping, falling back to direct URL:', err);
         setImage(value);
         setShowCropper(true);
+      } finally {
         setUploading(false);
       }
     } else {
@@ -447,6 +458,9 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  if (image && image.startsWith('blob:')) {
+                    URL.revokeObjectURL(image);
+                  }
                   setShowCropper(false);
                 }} 
                 className="px-10 py-4 bg-white/5 hover:bg-white/10 rounded-full font-bold text-xs uppercase tracking-widest transition-colors"
@@ -460,7 +474,18 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
                   e.preventDefault();
                   e.stopPropagation();
                   if (image) {
-                    await uploadToStorage(image);
+                    // If it's a blob URL, we need to convert it back or use the original file
+                    // For simplicity, we'll fetch it
+                    const response = await fetch(image);
+                    const blob = await response.blob();
+                    const file = new File([blob], 'original.jpg', { type: 'image/jpeg' });
+                    await uploadFile(file).then(url => {
+                      onChange(url);
+                    });
+                    
+                    if (image.startsWith('blob:')) {
+                      URL.revokeObjectURL(image);
+                    }
                     setShowCropper(false);
                     setImage(null);
                   }
@@ -472,7 +497,12 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
               </button>
               <button 
                 type="button" 
-                onClick={showCroppedImage} 
+                onClick={async (e) => {
+                  await showCroppedImage(e);
+                  if (image && image.startsWith('blob:')) {
+                    URL.revokeObjectURL(image);
+                  }
+                }} 
                 disabled={uploading}
                 className="px-10 py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50 rounded-full font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all"
               >
