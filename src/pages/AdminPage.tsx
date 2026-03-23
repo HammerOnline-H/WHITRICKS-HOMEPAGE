@@ -38,16 +38,77 @@ function LocalInput({ value, onSave, className, placeholder, textarea = false, r
   );
 }
 
+async function compressImage(file: File, maxWidth = 1920, maxHeight = 1080, quality = 0.8): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error('Canvas to Blob failed'));
+            }
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
+
 async function uploadFile(file: File): Promise<string> {
   if (!storage) {
     console.error('Storage not initialized');
     throw new Error('Firebase Storage is not initialized. Please check your configuration.');
   }
-  console.log('Uploading file:', file.name, file.size, 'to bucket:', storage.app.options.storageBucket);
+  
+  let fileToUpload: File | Blob = file;
+  
+  // Compress if it's an image and larger than 1MB
+  if (file.type.startsWith('image/') && file.size > 1024 * 1024) {
+    console.log('Compressing image:', file.name, file.size);
+    try {
+      fileToUpload = await compressImage(file);
+      console.log('Compression successful:', fileToUpload.size);
+    } catch (err) {
+      console.warn('Compression failed, uploading original:', err);
+    }
+  }
+
+  console.log('Uploading file:', file.name, fileToUpload.size, 'to bucket:', storage.app.options.storageBucket);
   const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}-${file.name}`;
   const storageRef = ref(storage, fileName);
   try {
-    const result = await uploadBytes(storageRef, file);
+    const result = await uploadBytes(storageRef, fileToUpload);
     console.log('Upload successful:', result.metadata.fullPath);
     return await getDownloadURL(storageRef);
   } catch (err: any) {
@@ -72,6 +133,90 @@ async function uploadBase64(base64: string): Promise<string> {
     console.error('uploadString failed:', err);
     throw new Error(`Base64 upload failed: ${err.message || err}`);
   }
+}
+
+function MultiImageUploader({ label, values, onChange, max = 5, aspectRatio }: { label: string, values: string[], onChange: (vals: string[]) => void, max?: number, aspectRatio?: number }) {
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      const remaining = max - values.length;
+      const toUpload = files.slice(0, remaining);
+
+      if (toUpload.length === 0) {
+        alert(`최대 ${max}장까지 업로드 가능합니다.`);
+        return;
+      }
+
+      setUploading(true);
+      try {
+        const uploadPromises = toUpload.map(file => uploadFile(file));
+        const urls = await Promise.all(uploadPromises);
+        onChange([...values, ...urls]);
+      } catch (error: any) {
+        console.error('Multi upload failed:', error);
+        alert(`이미지 업로드에 실패했습니다: ${error.message || error}`);
+      } finally {
+        setUploading(false);
+      }
+    }
+  };
+
+  const removeImage = (index: number) => {
+    const newValues = [...values];
+    newValues.splice(index, 1);
+    onChange(newValues);
+  };
+
+  const moveImage = (index: number, direction: 'up' | 'down') => {
+    const newValues = [...values];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newValues.length) return;
+    [newValues[index], newValues[targetIndex]] = [newValues[targetIndex], newValues[index]];
+    onChange(newValues);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">{label} ({values.length}/{max})</label>
+        {values.length < max && (
+          <label className="cursor-pointer bg-white/5 hover:bg-white/10 text-white px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-all flex items-center gap-2">
+            <Plus size={12} /> Add Images
+            <input type="file" multiple accept="image/*" onChange={handleFileChange} className="hidden" />
+          </label>
+        )}
+      </div>
+
+      <div className="grid grid-cols-5 gap-4">
+        {values.map((url, idx) => (
+          <div key={idx} className="relative group aspect-square bg-black rounded-xl border border-white/10 overflow-hidden">
+            <img src={url} alt="" className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+              <button type="button" onClick={() => moveImage(idx, 'up')} disabled={idx === 0} className="p-1 hover:text-purple-400 disabled:opacity-30">
+                <ArrowLeft size={14} className="rotate-90" />
+              </button>
+              <button type="button" onClick={() => moveImage(idx, 'down')} disabled={idx === values.length - 1} className="p-1 hover:text-purple-400 disabled:opacity-30">
+                <ArrowLeft size={14} className="-rotate-90" />
+              </button>
+              <button type="button" onClick={() => removeImage(idx)} className="p-1 hover:text-red-500">
+                <Trash2 size={14} />
+              </button>
+            </div>
+            {idx === 0 && (
+              <div className="absolute top-2 left-2 bg-purple-600 text-[8px] font-bold uppercase px-1.5 py-0.5 rounded">Main</div>
+            )}
+          </div>
+        ))}
+        {uploading && (
+          <div className="aspect-square bg-black rounded-xl border border-white/10 flex items-center justify-center">
+            <Loader2 className="animate-spin text-purple-500" size={20} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ImageUploader({ label, value, onChange, aspectRatio }: { label: string, value: string, onChange: (val: string) => void, aspectRatio?: number }) {
@@ -102,8 +247,8 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      if (file.size > 15 * 1024 * 1024) {
-        alert('파일이 너무 큽니다. 15MB 이하의 이미지를 사용해주세요.');
+      if (file.size > 50 * 1024 * 1024) {
+        alert('파일이 너무 큽니다. 50MB 이하의 이미지를 사용해주세요.');
         return;
       }
       const reader = new FileReader();
@@ -427,6 +572,7 @@ export default function AdminPage() {
       title: 'NEW PERFORMANCE', 
       description: 'PERFORMANCE DESCRIPTION', 
       image: 'https://picsum.photos/seed/perf/800/450',
+      images: ['https://picsum.photos/seed/perf/800/450'],
       order: localPerformances.length 
     };
     setLocalPerformances([...localPerformances, newItem]);
@@ -462,6 +608,7 @@ export default function AdminPage() {
       name: 'NEW MEMBER', 
       bio: 'BIO TEXT', 
       image: 'https://picsum.photos/seed/member/400/500', 
+      images: [],
       videoUrl: '', 
       links: [], 
       order: localMembers.length 
@@ -653,12 +800,21 @@ export default function AdminPage() {
                         </div>
                         
                         <ImageUploader 
-                          label="Profile Image" 
+                          label="Profile Image (Main)" 
                           value={member.image} 
                           onChange={(val) => {
                             setLocalMembers(prev => prev.map(m => m.id === member.id ? { ...m, image: val } : m));
                           }} 
                           aspectRatio={4/5} 
+                        />
+
+                        <MultiImageUploader
+                          label="Additional Photos"
+                          values={member.images || []}
+                          onChange={(vals) => {
+                            setLocalMembers(prev => prev.map(m => m.id === member.id ? { ...m, images: vals } : m));
+                          }}
+                          max={10}
                         />
                         
                         <div className="space-y-2">
@@ -707,18 +863,17 @@ export default function AdminPage() {
                       <Trash2 size={18} />
                     </button>
 
-                    <div className="grid md:grid-cols-2 gap-8">
-                      <div className="space-y-4">
-                        <ImageUploader 
-                          label="Performance Image" 
-                          value={p.image} 
-                          onChange={(val) => {
-                            setLocalPerformances(prev => prev.map(item => item.id === p.id ? { ...item, image: val } : item));
-                          }} 
-                          aspectRatio={16/9} 
-                        />
-                      </div>
-                      <div className="space-y-4">
+                    <div className="space-y-6">
+                      <MultiImageUploader 
+                        label="Content Images (1st is Main)" 
+                        values={p.images || (p.image ? [p.image] : [])} 
+                        onChange={(vals) => {
+                          setLocalPerformances(prev => prev.map(item => item.id === p.id ? { ...item, images: vals, image: vals[0] || '' } : p));
+                        }} 
+                        max={5}
+                      />
+                      
+                      <div className="grid md:grid-cols-2 gap-8">
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold text-white/30 uppercase">Title</label>
                           <LocalInput 

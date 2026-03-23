@@ -209,6 +209,25 @@ export default function About({ history, members }: { history: string, members: 
                     )}
                   </div>
                 </div>
+
+                {selectedMember.images && selectedMember.images.length > 0 && (
+                  <div className="space-y-6">
+                    <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em]">Photos</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {selectedMember.images.map((img, idx) => (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: idx * 0.1 }}
+                          className="aspect-square rounded-2xl overflow-hidden border border-white/10"
+                        >
+                          <img src={img} alt="" className="w-full h-full object-cover hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>

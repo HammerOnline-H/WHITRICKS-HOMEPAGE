@@ -5,6 +5,7 @@ export interface Member {
   links: string[];
   videoUrl: string;
   image: string;
+  images?: string[];
   order: number;
 }
 
@@ -36,6 +37,7 @@ export interface Performance {
   title: string;
   description: string;
   image: string;
+  images?: string[];
   order: number;
 }
 

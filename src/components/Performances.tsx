@@ -31,9 +31,19 @@ export default function Performances({ data }: { data: Performance[] }) {
                 />
               </div>
               <h3 className="text-2xl font-bold mb-4 group-hover:text-purple-400 transition-colors">{perf.title}</h3>
-              <div className="text-white/50 text-sm leading-relaxed whitespace-pre-wrap">
+              <div className="text-white/50 text-sm leading-relaxed whitespace-pre-wrap mb-6">
                 {perf.description}
               </div>
+
+              {perf.images && perf.images.length > 1 && (
+                <div className="grid grid-cols-4 gap-2">
+                  {perf.images.slice(1).map((img, i) => (
+                    <div key={i} className="aspect-square rounded-xl overflow-hidden border border-white/5">
+                      <img src={img} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </motion.div>
           ))}
         </div>
