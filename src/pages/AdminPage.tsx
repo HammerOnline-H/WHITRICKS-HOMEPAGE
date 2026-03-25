@@ -95,12 +95,12 @@ async function uploadFile(file: File, onProgress?: (progress: number) => void): 
   
   // Compress if it's an image and larger than 500KB
   if (file.type.startsWith('image/') && file.size > 500 * 1024) {
-    console.log('Compressing image:', file.name, file.size);
+    addLog(`Compressing image: ${file.name} (${file.size} bytes)`);
     try {
       fileToUpload = await compressImage(file, 1024, 1024, 0.6); // More aggressive
-      console.log('Compression successful:', fileToUpload.size);
+      addLog(`Compression successful: ${fileToUpload.size} bytes`);
     } catch (err) {
-      console.warn('Compression failed, uploading original:', err);
+      addLog(`Compression failed, uploading original: ${err}`, 'error');
     }
   }
 
@@ -109,8 +109,8 @@ async function uploadFile(file: File, onProgress?: (progress: number) => void): 
   const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}-${safeName}`;
   const storageRef = ref(storage, fileName);
   
-  console.log('Starting upload:', fileName, 'Size:', fileToUpload.size);
-
+  addLog(`Starting upload: ${fileName} (Size: ${fileToUpload.size} bytes)`);
+  
   return new Promise((resolve, reject) => {
     const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
 
@@ -123,17 +123,18 @@ async function uploadFile(file: File, onProgress?: (progress: number) => void): 
     uploadTask.on('state_changed', 
       (snapshot) => {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        console.log('Upload is ' + progress + '% done');
+        addLog(`Upload is ${Math.round(progress)}% done`);
         if (onProgress) onProgress(progress);
       }, 
       (error) => {
         clearTimeout(timeout);
-        console.error('Detailed Upload Error:', {
+        const errData = {
           code: error.code,
           message: error.message,
           name: error.name,
           serverResponse: (error as any).serverResponse
-        });
+        };
+        addLog(`Upload failed: ${JSON.stringify(errData)}`, 'error');
         
         if (error.code === 'storage/unauthorized') {
           reject(new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙(Rules) 탭에서 권한 설정을 확인해주세요.'));
@@ -148,7 +149,7 @@ async function uploadFile(file: File, onProgress?: (progress: number) => void): 
       () => {
         clearTimeout(timeout);
         getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-          console.log('File available at', downloadURL);
+          addLog(`File available at: ${downloadURL}`);
           resolve(downloadURL);
         });
       }
@@ -192,28 +193,28 @@ async function uploadBase64(base64: string, onProgress?: (p: number) => void): P
     throw new Error('Firebase Storage is not initialized. Please check your configuration.');
   }
   
-  console.log('Uploading base64 image, initial length:', base64.length);
+  addLog(`Uploading base64 image, initial length: ${base64.length}`);
   
   try {
     // Compress if it's likely a large image (rough estimate from base64 length)
     // Skip if it's already small enough (roughly < 500KB)
     let processedBase64 = base64;
     if (base64.length > 0.7 * 1024 * 1024) { 
-      console.log('Compressing large base64 image...');
+      addLog('Compressing large base64 image...');
       processedBase64 = await compressBase64(base64, 1024, 1024, 0.6); // More aggressive
-      console.log('Compression finished, new length:', processedBase64.length);
+      addLog(`Compression finished, new length: ${processedBase64.length}`);
     }
 
     // Convert base64 to Blob for more reliable upload
     const response = await fetch(processedBase64);
     const blob = await response.blob();
     
-    console.log('Converted base64 to blob, size:', blob.size);
+    addLog(`Converted base64 to blob, size: ${blob.size}`);
     
     const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
     const storageRef = ref(storage, fileName);
     
-    console.log('Starting base64 upload:', fileName, 'Size:', blob.size);
+    addLog(`Starting base64 upload: ${fileName} (Size: ${blob.size} bytes)`);
 
     return new Promise((resolve, reject) => {
       const uploadTask = uploadBytesResumable(storageRef, blob);
@@ -227,12 +228,12 @@ async function uploadBase64(base64: string, onProgress?: (p: number) => void): P
       uploadTask.on('state_changed', 
         (snapshot) => {
           const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          console.log('Base64 upload is ' + progress + '% done');
+          addLog(`Base64 upload is ${Math.round(progress)}% done`);
           if (onProgress) onProgress(progress);
         }, 
         (error) => {
           clearTimeout(timeout);
-          console.error('Base64 upload failed:', error);
+          addLog(`Base64 upload failed: ${error.code} - ${error.message}`, 'error');
           if (error.code === 'storage/unauthorized') {
             reject(new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙을 확인해주세요.'));
           } else if (error.code === 'storage/retry-limit-exceeded') {
@@ -244,7 +245,7 @@ async function uploadBase64(base64: string, onProgress?: (p: number) => void): P
         () => {
           clearTimeout(timeout);
           getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-            console.log('Base64 file available at', downloadURL);
+            addLog(`Base64 file available at: ${downloadURL}`);
             resolve(downloadURL);
           });
         }
@@ -623,14 +624,43 @@ export default function AdminPage() {
   const [deletedPartners, setDeletedPartners] = useState<string[]>([]);
   const [deletedGallery, setDeletedGallery] = useState<string[]>([]);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [debugLogs, setDebugLogs] = useState<{time: string, msg: string, type: 'info' | 'error'}[]>([]);
+
+  const addLog = (msg: string, type: 'info' | 'error' = 'info') => {
+    const time = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [{time, msg, type}, ...prev].slice(0, 50));
+    if (type === 'error') console.error(`[DEBUG] ${msg}`);
+    else console.log(`[DEBUG] ${msg}`);
+  };
 
   // Check storage initialization
   useEffect(() => {
+    // Global error listener for debug console
+    const handleError = (event: ErrorEvent) => {
+      addLog(`Global Error: ${event.message}`, 'error');
+    };
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      addLog(`Unhandled Rejection: ${event.reason}`, 'error');
+    };
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+
     if (!storage) {
-      setStorageError('Firebase Storage가 초기화되지 않았습니다. 설정을 확인해주세요.');
+      const err = 'Firebase Storage가 초기화되지 않았습니다. 설정을 확인해주세요.';
+      setStorageError(err);
+      addLog(err, 'error');
     } else if (!storage.app.options.storageBucket) {
-      setStorageError('Storage Bucket이 설정되지 않았습니다. firebase-applet-config.json을 확인해주세요.');
+      const err = 'Storage Bucket이 설정되지 않았습니다. firebase-applet-config.json을 확인해주세요.';
+      setStorageError(err);
+      addLog(err, 'error');
+    } else {
+      addLog(`Storage initialized with bucket: ${storage.app.options.storageBucket}`);
     }
+
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
   }, []);
 
   // Initialize local content
@@ -667,7 +697,7 @@ export default function AdminPage() {
 
   const handleUpdateSite = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    console.log('Manual save triggered for tab:', activeTab);
+    addLog(`Manual save triggered for tab: ${activeTab}`);
     setSaving(true);
     try {
       const batch = writeBatch(db);
@@ -713,6 +743,7 @@ export default function AdminPage() {
       }
 
       await batch.commit();
+      addLog('Changes saved successfully!');
       
       // Clear deleted lists after successful save
       if (activeTab === 'about') setDeletedMembers([]);
@@ -720,10 +751,10 @@ export default function AdminPage() {
       if (activeTab === 'gallery') setDeletedGallery([]);
       if (activeTab === 'network') setDeletedPartners([]);
 
-      console.log('Changes saved successfully!');
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
-    } catch (err) {
+    } catch (err: any) {
+      addLog(`Save failed: ${err.message}`, 'error');
       handleFirestoreError(err, OperationType.WRITE, activeTab);
     } finally {
       setSaving(false);
@@ -732,7 +763,7 @@ export default function AdminPage() {
 
   const updateLocal = (path: string, val: any) => {
     if (!localContent) return;
-    console.log(`Updating local state: ${path} = ${val}`);
+    addLog(`Updating local state: ${path} = ${val}`);
     const keys = path.split('.');
     const newContent = JSON.parse(JSON.stringify(localContent));
     let current: any = newContent;
@@ -835,10 +866,39 @@ export default function AdminPage() {
             <LogOut size={16} /> Sign Out
           </button>
         </div>
+
+        {/* Debug Console Toggle */}
+        <div className="mt-4 px-4">
+          <button 
+            type="button"
+            onClick={() => {
+              const el = document.getElementById('debug-console');
+              if (el) el.classList.toggle('hidden');
+            }}
+            className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-[8px] font-bold uppercase tracking-widest text-white/30"
+          >
+            Toggle Debug Console
+          </button>
+        </div>
       </aside>
 
       <main className="flex-1 p-8 md:p-12 overflow-y-auto max-h-screen">
         <div className="max-w-4xl mx-auto">
+          {/* Debug Console (Hidden by default) */}
+          <div id="debug-console" className="hidden mb-8 bg-black border border-white/10 rounded-2xl p-4 max-h-60 overflow-y-auto font-mono text-[10px] space-y-1">
+            <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
+              <span className="text-purple-500 font-bold uppercase tracking-widest">Debug Console</span>
+              <button onClick={() => setDebugLogs([])} className="text-white/30 hover:text-white">Clear</button>
+            </div>
+            {debugLogs.length === 0 && <div className="text-white/20 italic">No logs yet...</div>}
+            {debugLogs.map((log, i) => (
+              <div key={i} className={cn("flex gap-2", log.type === 'error' ? "text-red-400" : "text-white/50")}>
+                <span className="opacity-30">[{log.time}]</span>
+                <span className="flex-1 break-all">{log.msg}</span>
+              </div>
+            ))}
+          </div>
+
           <form 
             onSubmit={handleUpdateSite} 
             onKeyDown={(e) => {
