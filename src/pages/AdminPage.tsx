@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc, collection, addDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, uploadString, uploadBytesResumable } from 'firebase/storage';
 import { db, logout, storage } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { useAuth } from '../hooks/useAuth';
@@ -85,7 +85,7 @@ async function compressImage(file: File, maxWidth = 1920, maxHeight = 1080, qual
   });
 }
 
-async function uploadFile(file: File): Promise<string> {
+async function uploadFile(file: File, onProgress?: (progress: number) => void): Promise<string> {
   if (!storage) {
     console.error('Storage not initialized');
     throw new Error('Firebase Storage is not initialized. Please check your configuration.');
@@ -93,31 +93,59 @@ async function uploadFile(file: File): Promise<string> {
   
   let fileToUpload: File | Blob = file;
   
-  // Compress if it's an image and larger than 1MB
-  if (file.type.startsWith('image/') && file.size > 1024 * 1024) {
+  // Compress if it's an image and larger than 500KB
+  if (file.type.startsWith('image/') && file.size > 500 * 1024) {
     console.log('Compressing image:', file.name, file.size);
     try {
-      fileToUpload = await compressImage(file, 1600, 1600, 0.7); // More aggressive compression
+      fileToUpload = await compressImage(file, 1024, 1024, 0.6); // More aggressive
       console.log('Compression successful:', fileToUpload.size);
     } catch (err) {
       console.warn('Compression failed, uploading original:', err);
     }
   }
 
-  console.log('Uploading file:', file.name, fileToUpload.size, 'to bucket:', storage.app.options.storageBucket);
-  const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}-${file.name}`;
+  // Sanitize file name
+  const safeName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+  const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}-${safeName}`;
   const storageRef = ref(storage, fileName);
-  try {
-    const result = await uploadBytes(storageRef, fileToUpload);
-    console.log('Upload successful:', result.metadata.fullPath);
-    return await getDownloadURL(storageRef);
-  } catch (err: any) {
-    console.error('uploadBytes failed:', err);
-    if (err.code === 'storage/retry-limit-exceeded') {
-      throw new Error('업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나, Firebase Console에서 CORS 설정을 확인해주세요.');
-    }
-    throw new Error(`Upload failed: ${err.message || err}`);
-  }
+  
+  console.log('Starting upload:', fileName, 'Size:', fileToUpload.size);
+
+  return new Promise((resolve, reject) => {
+    const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
+
+    // Set a timeout for the upload (60 seconds)
+    const timeout = setTimeout(() => {
+      uploadTask.cancel();
+      reject(new Error('업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나 파일 크기를 줄여주세요.'));
+    }, 60000);
+
+    uploadTask.on('state_changed', 
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        console.log('Upload is ' + progress + '% done');
+        if (onProgress) onProgress(progress);
+      }, 
+      (error) => {
+        clearTimeout(timeout);
+        console.error('Upload failed:', error);
+        if (error.code === 'storage/unauthorized') {
+          reject(new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙을 확인해주세요.'));
+        } else if (error.code === 'storage/retry-limit-exceeded') {
+          reject(new Error('업로드 시간이 초과되었습니다. CORS 설정이나 네트워크를 확인해주세요.'));
+        } else {
+          reject(new Error(`업로드 실패: ${error.message}`));
+        }
+      }, 
+      () => {
+        clearTimeout(timeout);
+        getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
+          console.log('File available at', downloadURL);
+          resolve(downloadURL);
+        });
+      }
+    );
+  });
 }
 
 async function compressBase64(base64: string, maxWidth = 1920, maxHeight = 1080, quality = 0.8): Promise<string> {
@@ -150,7 +178,7 @@ async function compressBase64(base64: string, maxWidth = 1920, maxHeight = 1080,
   }
 }
 
-async function uploadBase64(base64: string): Promise<string> {
+async function uploadBase64(base64: string, onProgress?: (p: number) => void): Promise<string> {
   if (!storage) {
     console.error('Storage not initialized');
     throw new Error('Firebase Storage is not initialized. Please check your configuration.');
@@ -160,11 +188,11 @@ async function uploadBase64(base64: string): Promise<string> {
   
   try {
     // Compress if it's likely a large image (rough estimate from base64 length)
-    // Skip if it's already small enough (roughly < 800KB)
+    // Skip if it's already small enough (roughly < 500KB)
     let processedBase64 = base64;
-    if (base64.length > 1.2 * 1024 * 1024) { 
+    if (base64.length > 0.7 * 1024 * 1024) { 
       console.log('Compressing large base64 image...');
-      processedBase64 = await compressBase64(base64, 1280, 1280, 0.75);
+      processedBase64 = await compressBase64(base64, 1024, 1024, 0.6); // More aggressive
       console.log('Compression finished, new length:', processedBase64.length);
     }
 
@@ -177,20 +205,52 @@ async function uploadBase64(base64: string): Promise<string> {
     const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
     const storageRef = ref(storage, fileName);
     
-    const result = await uploadBytes(storageRef, blob);
-    console.log('Base64 upload successful:', result.metadata.fullPath);
-    return await getDownloadURL(storageRef);
+    console.log('Starting base64 upload:', fileName, 'Size:', blob.size);
+
+    return new Promise((resolve, reject) => {
+      const uploadTask = uploadBytesResumable(storageRef, blob);
+
+      // Set a timeout for the upload (60 seconds)
+      const timeout = setTimeout(() => {
+        uploadTask.cancel();
+        reject(new Error('이미지 업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나 파일 크기를 줄여주세요.'));
+      }, 60000);
+
+      uploadTask.on('state_changed', 
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log('Base64 upload is ' + progress + '% done');
+          if (onProgress) onProgress(progress);
+        }, 
+        (error) => {
+          clearTimeout(timeout);
+          console.error('Base64 upload failed:', error);
+          if (error.code === 'storage/unauthorized') {
+            reject(new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙을 확인해주세요.'));
+          } else if (error.code === 'storage/retry-limit-exceeded') {
+            reject(new Error('업로드 시간이 초과되었습니다. CORS 설정이나 네트워크를 확인해주세요.'));
+          } else {
+            reject(new Error(`업로드 실패: ${error.message}`));
+          }
+        }, 
+        () => {
+          clearTimeout(timeout);
+          getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
+            console.log('Base64 file available at', downloadURL);
+            resolve(downloadURL);
+          });
+        }
+      );
+    });
   } catch (err: any) {
-    console.error('uploadBase64 failed:', err);
-    if (err.code === 'storage/retry-limit-exceeded') {
-      throw new Error('이미지 업로드 시간이 초과되었습니다. 파일 크기를 줄이거나, Firebase Console에서 CORS 설정을 확인해주세요.');
-    }
-    throw new Error(`Base64 upload failed: ${err.message || err}`);
+    console.error('uploadBase64 processing failed:', err);
+    throw new Error(`이미지 처리 실패: ${err.message || err}`);
   }
 }
 
 function MultiImageUploader({ label, values, onChange, max = 5, aspectRatio }: { label: string, values: string[], onChange: (vals: string[]) => void, max?: number, aspectRatio?: number }) {
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -204,10 +264,16 @@ function MultiImageUploader({ label, values, onChange, max = 5, aspectRatio }: {
       }
 
       setUploading(true);
+      setProgress(0);
       try {
         const urls = [];
-        for (const file of toUpload) {
-          const url = await uploadFile(file);
+        for (let i = 0; i < toUpload.length; i++) {
+          const file = toUpload[i];
+          const url = await uploadFile(file, (p) => {
+            // Overall progress calculation
+            const overall = ((i / toUpload.length) * 100) + (p / toUpload.length);
+            setProgress(overall);
+          });
           urls.push(url);
         }
         onChange([...values, ...urls]);
@@ -216,6 +282,7 @@ function MultiImageUploader({ label, values, onChange, max = 5, aspectRatio }: {
         alert(`이미지 업로드에 실패했습니다: ${error.message || error}`);
       } finally {
         setUploading(false);
+        setProgress(0);
       }
     }
   };
@@ -267,8 +334,12 @@ function MultiImageUploader({ label, values, onChange, max = 5, aspectRatio }: {
           </div>
         ))}
         {uploading && (
-          <div className="aspect-square bg-black rounded-xl border border-white/10 flex items-center justify-center">
+          <div className="aspect-square bg-black rounded-xl border border-white/10 flex flex-col items-center justify-center gap-2">
             <Loader2 className="animate-spin text-purple-500" size={20} />
+            <span className="text-[8px] font-bold text-white/50">{Math.round(progress)}%</span>
+            <div className="w-12 h-1 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-purple-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+            </div>
           </div>
         )}
       </div>
@@ -283,6 +354,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [showCropper, setShowCropper] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   const onCropComplete = useCallback((_area: any, pixels: any) => {
     setCroppedAreaPixels(pixels);
@@ -290,14 +362,16 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
 
   const uploadToStorage = async (dataUrl: string) => {
     setUploading(true);
+    setProgress(0);
     try {
-      const downloadUrl = await uploadBase64(dataUrl);
+      const downloadUrl = await uploadBase64(dataUrl, (p) => setProgress(p));
       onChange(downloadUrl);
     } catch (error: any) {
       console.error('Upload failed:', error);
       alert(`이미지 업로드에 실패했습니다: ${error.message || error}`);
     } finally {
       setUploading(false);
+      setProgress(0);
     }
   };
 
@@ -479,7 +553,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
                     const response = await fetch(image);
                     const blob = await response.blob();
                     const file = new File([blob], 'original.jpg', { type: 'image/jpeg' });
-                    await uploadFile(file).then(url => {
+                    await uploadFile(file, (p) => setProgress(p)).then(url => {
                       onChange(url);
                     });
                     
@@ -493,7 +567,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
                 className="px-10 py-4 bg-white/10 hover:bg-white/20 disabled:opacity-50 rounded-full font-bold text-xs uppercase tracking-widest transition-colors flex items-center gap-2"
               >
                 {uploading && <Loader2 className="animate-spin" size={14} />}
-                Use Original
+                {uploading ? `${Math.round(progress)}%` : 'Use Original'}
               </button>
               <button 
                 type="button" 
@@ -507,7 +581,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
                 className="px-10 py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50 rounded-full font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all"
               >
                 {uploading ? <Loader2 className="animate-spin" size={14} /> : <Crop size={14} />}
-                {uploading ? 'Processing...' : 'Apply Crop'}
+                {uploading ? `${Math.round(progress)}%` : 'Apply Crop'}
               </button>
             </div>
           </div>
@@ -533,12 +607,23 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('home');
   const [saving, setSaving] = useState(false);
   const [galleryUploading, setGalleryUploading] = useState(false);
+  const [galleryProgress, setGalleryProgress] = useState(0);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [deletedMembers, setDeletedMembers] = useState<string[]>([]);
   const [deletedPerformances, setDeletedPerformances] = useState<string[]>([]);
   const [deletedPartners, setDeletedPartners] = useState<string[]>([]);
   const [deletedGallery, setDeletedGallery] = useState<string[]>([]);
+  const [storageError, setStorageError] = useState<string | null>(null);
+
+  // Check storage initialization
+  useEffect(() => {
+    if (!storage) {
+      setStorageError('Firebase Storage가 초기화되지 않았습니다. 설정을 확인해주세요.');
+    } else if (!storage.app.options.storageBucket) {
+      setStorageError('Storage Bucket이 설정되지 않았습니다. firebase-applet-config.json을 확인해주세요.');
+    }
+  }, []);
 
   // Initialize local content
   React.useEffect(() => {
@@ -759,6 +844,12 @@ export default function AdminPage() {
               <h2 className="text-3xl font-bold uppercase tracking-tighter">
                 {activeTab === 'performances' ? 'Contents' : activeTab} Management
               </h2>
+              {storageError && (
+                <div className="flex items-center gap-2 text-red-400 text-[10px] font-bold uppercase tracking-widest bg-red-400/10 px-4 py-2 rounded-full">
+                  <Settings size={12} />
+                  {storageError}
+                </div>
+              )}
               {['home', 'about', 'performances', 'gallery', 'contact', 'network'].includes(activeTab) && (
                 <div className="flex items-center gap-4">
                   <AnimatePresence>
@@ -1024,11 +1115,15 @@ export default function AdminPage() {
                       if (imageFiles.length === 0) return;
 
                       setGalleryUploading(true);
+                      setGalleryProgress(0);
                       try {
                         const newItems = [];
                         for (let i = 0; i < imageFiles.length; i++) {
                           const file = imageFiles[i];
-                          const downloadUrl = await uploadFile(file);
+                          const downloadUrl = await uploadFile(file, (p) => {
+                            const overall = ((i / imageFiles.length) * 100) + (p / imageFiles.length);
+                            setGalleryProgress(overall);
+                          });
                           const newId = doc(collection(db, 'gallery')).id;
                           newItems.push({
                             id: newId,
@@ -1043,6 +1138,7 @@ export default function AdminPage() {
                         alert(`이미지 업로드에 실패했습니다: ${err.message || err}`);
                       } finally {
                         setGalleryUploading(false);
+                        setGalleryProgress(0);
                       }
                     }}
                     className={cn(
@@ -1055,8 +1151,13 @@ export default function AdminPage() {
                     </div>
                     <div className="text-center">
                       <p className="text-sm font-bold uppercase tracking-widest text-white/40 group-hover:text-white transition-colors">
-                        {galleryUploading ? 'Uploading...' : 'Drag & Drop Photos Here'}
+                        {galleryUploading ? `Uploading ${Math.round(galleryProgress)}%` : 'Drag & Drop Photos Here'}
                       </p>
+                      {galleryUploading && (
+                        <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden mt-2 mx-auto">
+                          <div className="h-full bg-purple-500 transition-all duration-300" style={{ width: `${galleryProgress}%` }} />
+                        </div>
+                      )}
                       <p className="text-[10px] text-white/20 mt-1 uppercase tracking-widest">Multiple files supported</p>
                     </div>
                     <input 
@@ -1070,11 +1171,15 @@ export default function AdminPage() {
                         if (files.length === 0) return;
                         
                         setGalleryUploading(true);
+                        setGalleryProgress(0);
                         try {
                           const newItems = [];
                           for (let i = 0; i < files.length; i++) {
                             const file = files[i];
-                            const downloadUrl = await uploadFile(file);
+                            const downloadUrl = await uploadFile(file, (p) => {
+                              const overall = ((i / files.length) * 100) + (p / files.length);
+                              setGalleryProgress(overall);
+                            });
                             const newId = doc(collection(db, 'gallery')).id;
                             newItems.push({
                               id: newId,
@@ -1089,6 +1194,7 @@ export default function AdminPage() {
                           alert(`이미지 업로드에 실패했습니다: ${err.message || err}`);
                         } finally {
                           setGalleryUploading(false);
+                          setGalleryProgress(0);
                         }
                       }}
                     />
