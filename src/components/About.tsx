@@ -6,6 +6,7 @@ import { ExternalLink, Play, X, ArrowRight, ChevronLeft, ChevronRight } from 'lu
 export default function About({ history, members }: { history: string, members: Member[] }) {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
 
   const scrollCarousel = (direction: 'left' | 'right') => {
@@ -213,14 +214,15 @@ export default function About({ history, members }: { history: string, members: 
                 {selectedMember.images && selectedMember.images.length > 0 && (
                   <div className="space-y-6">
                     <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em]">Photos</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar snap-x">
                       {selectedMember.images.map((img, idx) => (
                         <motion.div
                           key={idx}
                           initial={{ opacity: 0, scale: 0.9 }}
                           animate={{ opacity: 1, scale: 1 }}
                           transition={{ delay: idx * 0.1 }}
-                          className="aspect-square rounded-2xl overflow-hidden border border-white/10"
+                          className="flex-shrink-0 w-32 h-32 md:w-40 md:h-40 rounded-2xl overflow-hidden border border-white/10 snap-start cursor-pointer"
+                          onClick={() => setLightboxImage(img)}
                         >
                           <img src={img} alt="" className="w-full h-full object-cover hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
                         </motion.div>
@@ -229,6 +231,36 @@ export default function About({ history, members }: { history: string, members: 
                   </div>
                 )}
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Lightbox */}
+      <AnimatePresence>
+        {lightboxImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/98 backdrop-blur-3xl flex items-center justify-center p-4 md:p-12"
+            onClick={() => setLightboxImage(null)}
+          >
+            <button className="absolute top-10 right-10 text-white/50 hover:text-white transition-colors z-10">
+              <X size={32} />
+            </button>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="relative max-w-full max-h-full flex items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img 
+                src={lightboxImage} 
+                alt="Full size" 
+                className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl" 
+                referrerPolicy="no-referrer"
+              />
             </motion.div>
           </motion.div>
         )}

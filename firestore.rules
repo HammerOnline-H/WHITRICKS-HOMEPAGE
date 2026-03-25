@@ -78,7 +78,8 @@ service cloud.firestore {
       return data.title is string && data.title.size() < 200 &&
              data.description is string && data.description.size() < 5000 &&
              isValidUrl(data.image) &&
-             data.order is number;
+             data.order is number &&
+             (!('images' in data) || data.images is list);
     }
 
     function isValidGalleryItem(data) {
@@ -100,7 +101,8 @@ service cloud.firestore {
              data.links is list &&
              isValidUrl(data.image) &&
              data.order is number &&
-             (!('videoUrl' in data) || data.videoUrl == "" || isValidUrl(data.videoUrl));
+             (!('videoUrl' in data) || data.videoUrl == "" || isValidUrl(data.videoUrl)) &&
+             (!('images' in data) || data.images is list);
     }
 
     // ===============================================================

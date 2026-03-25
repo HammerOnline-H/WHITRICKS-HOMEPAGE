@@ -1136,7 +1136,7 @@ export default function AdminPage() {
                         label="Content Images (1st is Main)" 
                         values={p.images || (p.image ? [p.image] : [])} 
                         onChange={(vals) => {
-                          setLocalPerformances(prev => prev.map(item => item.id === p.id ? { ...item, images: vals, image: vals[0] || '' } : p));
+                          setLocalPerformances(prev => prev.map(item => item.id === p.id ? { ...item, images: vals, image: vals[0] || '' } : item));
                         }} 
                         max={5}
                       />
