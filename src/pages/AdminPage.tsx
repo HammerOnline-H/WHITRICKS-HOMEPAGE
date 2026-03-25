@@ -114,11 +114,11 @@ async function uploadFile(file: File, onProgress?: (progress: number) => void): 
   return new Promise((resolve, reject) => {
     const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
 
-    // Set a timeout for the upload (60 seconds)
+    // Set a timeout for the upload (120 seconds)
     const timeout = setTimeout(() => {
       uploadTask.cancel();
-      reject(new Error('업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나 파일 크기를 줄여주세요.'));
-    }, 60000);
+      reject(new Error('업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나 파일 크기를 줄여주세요. (120초 경과)'));
+    }, 120000);
 
     uploadTask.on('state_changed', 
       (snapshot) => {
@@ -128,13 +128,21 @@ async function uploadFile(file: File, onProgress?: (progress: number) => void): 
       }, 
       (error) => {
         clearTimeout(timeout);
-        console.error('Upload failed:', error);
+        console.error('Detailed Upload Error:', {
+          code: error.code,
+          message: error.message,
+          name: error.name,
+          serverResponse: (error as any).serverResponse
+        });
+        
         if (error.code === 'storage/unauthorized') {
-          reject(new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙을 확인해주세요.'));
+          reject(new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙(Rules) 탭에서 권한 설정을 확인해주세요.'));
         } else if (error.code === 'storage/retry-limit-exceeded') {
-          reject(new Error('업로드 시간이 초과되었습니다. CORS 설정이나 네트워크를 확인해주세요.'));
+          reject(new Error('업로드 시간이 초과되었습니다. CORS 설정이나 네트워크 상태를 다시 확인해주세요.'));
+        } else if (error.code === 'storage/canceled') {
+          reject(new Error('사용자 또는 시스템에 의해 업로드가 취소되었습니다. (타임아웃 등)'));
         } else {
-          reject(new Error(`업로드 실패: ${error.message}`));
+          reject(new Error(`업로드 실패 (${error.code}): ${error.message}`));
         }
       }, 
       () => {
@@ -210,11 +218,11 @@ async function uploadBase64(base64: string, onProgress?: (p: number) => void): P
     return new Promise((resolve, reject) => {
       const uploadTask = uploadBytesResumable(storageRef, blob);
 
-      // Set a timeout for the upload (60 seconds)
-      const timeout = setTimeout(() => {
-        uploadTask.cancel();
-        reject(new Error('이미지 업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나 파일 크기를 줄여주세요.'));
-      }, 60000);
+    // Set a timeout for the upload (120 seconds)
+    const timeout = setTimeout(() => {
+      uploadTask.cancel();
+      reject(new Error('이미지 업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나 파일 크기를 줄여주세요. (120초 경과)'));
+    }, 120000);
 
       uploadTask.on('state_changed', 
         (snapshot) => {
