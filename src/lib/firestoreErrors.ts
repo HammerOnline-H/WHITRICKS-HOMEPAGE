@@ -1,4 +1,5 @@
 import { auth } from '../firebase';
+import { addLog } from './logger';
 
 export enum OperationType {
   CREATE = 'create',
@@ -47,6 +48,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   }
+  const msg = `Firestore Error (${operationType} on ${path}): ${errInfo.error}`;
+  addLog(msg, 'error');
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }

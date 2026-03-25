@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc, collection, addDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, uploadString, uploadBytesResumable } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
 import { db, logout, storage } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { useAuth } from '../hooks/useAuth';
@@ -12,6 +12,7 @@ import { cn } from '../lib/utils';
 import { Performance, GalleryItem, Partner, SiteContent, Member } from '../types';
 import Cropper from 'react-easy-crop';
 import getCroppedImg, { createImage } from '../lib/cropImage';
+import { addLog } from '../lib/logger';
 
 function LocalInput({ value, onSave, className, placeholder, textarea = false, rows = 3 }: any) {
   const [localValue, setLocalValue] = React.useState(value);
@@ -87,7 +88,7 @@ async function compressImage(file: File, maxWidth = 1920, maxHeight = 1080, qual
 
 async function uploadFile(file: File, onProgress?: (progress: number) => void): Promise<string> {
   if (!storage) {
-    console.error('Storage not initialized');
+    addLog('Storage not initialized', 'error');
     throw new Error('Firebase Storage is not initialized. Please check your configuration.');
   }
   
@@ -111,50 +112,38 @@ async function uploadFile(file: File, onProgress?: (progress: number) => void): 
   
   addLog(`Starting upload: ${fileName} (Size: ${fileToUpload.size} bytes)`);
   
-  return new Promise((resolve, reject) => {
-    const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
-
+  try {
+    // Using uploadBytes for simpler, more robust upload in restricted environments
+    const uploadPromise = uploadBytes(storageRef, fileToUpload);
+    
     // Set a timeout for the upload (120 seconds)
-    const timeout = setTimeout(() => {
-      uploadTask.cancel();
-      reject(new Error('업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나 파일 크기를 줄여주세요. (120초 경과)'));
-    }, 120000);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('업로드 시간이 초과되었습니다. CORS 설정이나 네트워크 상태를 확인해주세요. (120초 경과)')), 120000);
+    });
 
-    uploadTask.on('state_changed', 
-      (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        addLog(`Upload is ${Math.round(progress)}% done`);
-        if (onProgress) onProgress(progress);
-      }, 
-      (error) => {
-        clearTimeout(timeout);
-        const errData = {
-          code: error.code,
-          message: error.message,
-          name: error.name,
-          serverResponse: (error as any).serverResponse
-        };
-        addLog(`Upload failed: ${JSON.stringify(errData)}`, 'error');
-        
-        if (error.code === 'storage/unauthorized') {
-          reject(new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙(Rules) 탭에서 권한 설정을 확인해주세요.'));
-        } else if (error.code === 'storage/retry-limit-exceeded') {
-          reject(new Error('업로드 시간이 초과되었습니다. CORS 설정이나 네트워크 상태를 다시 확인해주세요.'));
-        } else if (error.code === 'storage/canceled') {
-          reject(new Error('사용자 또는 시스템에 의해 업로드가 취소되었습니다. (타임아웃 등)'));
-        } else {
-          reject(new Error(`업로드 실패 (${error.code}): ${error.message}`));
-        }
-      }, 
-      () => {
-        clearTimeout(timeout);
-        getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-          addLog(`File available at: ${downloadURL}`);
-          resolve(downloadURL);
-        });
-      }
-    );
-  });
+    const snapshot = await Promise.race([uploadPromise, timeoutPromise]);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    
+    addLog(`Upload successful! URL: ${downloadURL}`);
+    if (onProgress) onProgress(100);
+    return downloadURL;
+  } catch (error: any) {
+    const errData = {
+      code: error.code,
+      message: error.message,
+      name: error.name,
+      serverResponse: error.serverResponse
+    };
+    addLog(`Upload failed: ${JSON.stringify(errData)}`, 'error');
+    
+    if (error.code === 'storage/unauthorized') {
+      throw new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙을 확인해주세요.');
+    } else if (error.code === 'storage/retry-limit-exceeded' || error.message.includes('초과')) {
+      throw new Error('업로드 시간이 초과되었습니다. CORS 설정이 되어있는지 확인이 필요합니다.');
+    } else {
+      throw new Error(`업로드 실패 (${error.code}): ${error.message}`);
+    }
+  }
 }
 
 async function compressBase64(base64: string, maxWidth = 1920, maxHeight = 1080, quality = 0.8): Promise<string> {
@@ -182,14 +171,14 @@ async function compressBase64(base64: string, maxWidth = 1920, maxHeight = 1080,
     ctx?.drawImage(img, 0, 0, width, height);
     return canvas.toDataURL('image/jpeg', quality);
   } catch (err) {
-    console.warn('compressBase64 failed, returning original:', err);
+    addLog(`compressBase64 failed, returning original: ${err}`, 'info');
     return base64;
   }
 }
 
 async function uploadBase64(base64: string, onProgress?: (p: number) => void): Promise<string> {
   if (!storage) {
-    console.error('Storage not initialized');
+    addLog('Storage not initialized', 'error');
     throw new Error('Firebase Storage is not initialized. Please check your configuration.');
   }
   
@@ -216,43 +205,31 @@ async function uploadBase64(base64: string, onProgress?: (p: number) => void): P
     
     addLog(`Starting base64 upload: ${fileName} (Size: ${blob.size} bytes)`);
 
-    return new Promise((resolve, reject) => {
-      const uploadTask = uploadBytesResumable(storageRef, blob);
+    try {
+      const uploadPromise = uploadBytes(storageRef, blob);
+      
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('이미지 업로드 시간이 초과되었습니다. (120초 경과)')), 120000);
+      });
 
-    // Set a timeout for the upload (120 seconds)
-    const timeout = setTimeout(() => {
-      uploadTask.cancel();
-      reject(new Error('이미지 업로드 시간이 초과되었습니다. 네트워크 상태를 확인하거나 파일 크기를 줄여주세요. (120초 경과)'));
-    }, 120000);
-
-      uploadTask.on('state_changed', 
-        (snapshot) => {
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          addLog(`Base64 upload is ${Math.round(progress)}% done`);
-          if (onProgress) onProgress(progress);
-        }, 
-        (error) => {
-          clearTimeout(timeout);
-          addLog(`Base64 upload failed: ${error.code} - ${error.message}`, 'error');
-          if (error.code === 'storage/unauthorized') {
-            reject(new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙을 확인해주세요.'));
-          } else if (error.code === 'storage/retry-limit-exceeded') {
-            reject(new Error('업로드 시간이 초과되었습니다. CORS 설정이나 네트워크를 확인해주세요.'));
-          } else {
-            reject(new Error(`업로드 실패: ${error.message}`));
-          }
-        }, 
-        () => {
-          clearTimeout(timeout);
-          getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-            addLog(`Base64 file available at: ${downloadURL}`);
-            resolve(downloadURL);
-          });
-        }
-      );
-    });
+      const snapshot = await Promise.race([uploadPromise, timeoutPromise]);
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      
+      addLog(`Base64 upload successful! URL: ${downloadURL}`);
+      if (onProgress) onProgress(100);
+      return downloadURL;
+    } catch (error: any) {
+      addLog(`Base64 upload failed: ${error.code} - ${error.message}`, 'error');
+      if (error.code === 'storage/unauthorized') {
+        throw new Error('업로드 권한이 없습니다. Firebase Storage 보안 규칙을 확인해주세요.');
+      } else if (error.code === 'storage/retry-limit-exceeded' || error.message.includes('초과')) {
+        throw new Error('업로드 시간이 초과되었습니다. CORS 설정이나 네트워크를 확인해주세요.');
+      } else {
+        throw new Error(`업로드 실패: ${error.message}`);
+      }
+    }
   } catch (err: any) {
-    console.error('uploadBase64 processing failed:', err);
+    addLog(`uploadBase64 processing failed: ${err}`, 'error');
     throw new Error(`이미지 처리 실패: ${err.message || err}`);
   }
 }
@@ -287,7 +264,7 @@ function MultiImageUploader({ label, values, onChange, max = 5, aspectRatio }: {
         }
         onChange([...values, ...urls]);
       } catch (error: any) {
-        console.error('Multi upload failed:', error);
+        addLog(`Multi upload failed: ${error}`, 'error');
         alert(`이미지 업로드에 실패했습니다: ${error.message || error}`);
       } finally {
         setUploading(false);
@@ -376,7 +353,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
       const downloadUrl = await uploadBase64(dataUrl, (p) => setProgress(p));
       onChange(downloadUrl);
     } catch (error: any) {
-      console.error('Upload failed:', error);
+      addLog(`Upload failed: ${error}`, 'error');
       alert(`이미지 업로드에 실패했습니다: ${error.message || error}`);
     } finally {
       setUploading(false);
@@ -397,7 +374,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
         let fileToProcess = file;
         // Pre-compress if the file is very large to avoid memory issues in the cropper
         if (file.size > 2 * 1024 * 1024) {
-          console.log('Pre-compressing large file for cropper...');
+          addLog('Pre-compressing large file for cropper...');
           const compressedBlob = await compressImage(file, 2048, 2048, 0.8);
           fileToProcess = new File([compressedBlob], file.name, { type: 'image/jpeg' });
         }
@@ -406,7 +383,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
         setImage(objectUrl);
         setShowCropper(true);
       } catch (err) {
-        console.error('File processing failed:', err);
+        addLog(`File processing failed: ${err}`, 'error');
         alert('파일 처리에 실패했습니다.');
       } finally {
         setUploading(false);
@@ -420,7 +397,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
     if (value) {
       setUploading(true);
       try {
-        console.log('Starting crop for:', value);
+        addLog(`Starting crop for: ${value}`);
         // Try to fetch the image to avoid CORS issues with the cropper
         const response = await fetch(value, { mode: 'cors' });
         const blob = await response.blob();
@@ -428,7 +405,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
         setImage(objectUrl);
         setShowCropper(true);
       } catch (err) {
-        console.warn('Failed to fetch image for cropping, falling back to direct URL:', err);
+        addLog(`Failed to fetch image for cropping, falling back to direct URL: ${err}`, 'info');
         setImage(value);
         setShowCropper(true);
       } finally {
@@ -451,7 +428,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
         setImage(null);
       }
     } catch (e) {
-      console.error(e);
+      addLog(`Crop failed: ${e}`, 'error');
       alert('이미지 크롭에 실패했습니다.');
     } finally {
       setUploading(false);
@@ -618,6 +595,7 @@ export default function AdminPage() {
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState(0);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
 
   const [deletedMembers, setDeletedMembers] = useState<string[]>([]);
   const [deletedPerformances, setDeletedPerformances] = useState<string[]>([]);
@@ -626,12 +604,15 @@ export default function AdminPage() {
   const [storageError, setStorageError] = useState<string | null>(null);
   const [debugLogs, setDebugLogs] = useState<{time: string, msg: string, type: 'info' | 'error'}[]>([]);
 
-  const addLog = (msg: string, type: 'info' | 'error' = 'info') => {
-    const time = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [{time, msg, type}, ...prev].slice(0, 50));
-    if (type === 'error') console.error(`[DEBUG] ${msg}`);
-    else console.log(`[DEBUG] ${msg}`);
-  };
+  useEffect(() => {
+    const handleLog = (e: any) => {
+      const { msg, type } = e.detail;
+      const time = new Date().toLocaleTimeString();
+      setDebugLogs(prev => [{time, msg, type}, ...prev].slice(0, 50));
+    };
+    window.addEventListener('app-log', handleLog);
+    return () => window.removeEventListener('app-log', handleLog);
+  }, []);
 
   // Check storage initialization
   useEffect(() => {
@@ -868,32 +849,74 @@ export default function AdminPage() {
         </div>
 
         {/* Debug Console Toggle */}
-        <div className="mt-4 px-4">
+        <div className="mt-4 px-4 space-y-2">
+          <button 
+            type="button"
+            onClick={async () => {
+              if (!storage) {
+                addLog('Storage not initialized', 'error');
+                return;
+              }
+              setTestLoading(true);
+              const bucketName = storage.app.options.storageBucket;
+              addLog(`Testing Storage connection to bucket: ${bucketName}...`);
+              try {
+                const testRef = ref(storage, `test/connection-${Date.now()}.txt`);
+                const blob = new Blob(['Connection Test'], { type: 'text/plain' });
+                await uploadBytes(testRef, blob);
+                addLog('Storage Connection Test: SUCCESS! You can upload files.', 'info');
+                alert('저장소 연결 성공! 이제 이미지 업로드가 가능합니다.');
+              } catch (err: any) {
+                addLog(`Storage Connection Test: FAILED - ${err.code}: ${err.message}`, 'error');
+                if (err.code === 'storage/retry-limit-exceeded') {
+                  addLog('HINT: Firebase Console의 Storage 탭에서 [시작하기]를 눌렀는지 확인해주세요.', 'info');
+                }
+                alert(`저장소 연결 실패: ${err.message}\n\n1. Firebase Console > Storage 탭에서 [시작하기]를 눌렀는지 확인\n2. Storage Rules가 "allow read, write: if request.auth != null;" 인지 확인`);
+              } finally {
+                setTestLoading(false);
+              }
+            }}
+            disabled={testLoading}
+            className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/40 rounded-lg text-[8px] font-bold uppercase tracking-widest text-blue-400 border border-blue-500/30 flex items-center justify-center gap-2"
+          >
+            {testLoading && <Loader2 className="animate-spin" size={10} />}
+            Test Storage Connection
+          </button>
           <button 
             type="button"
             onClick={() => {
               const el = document.getElementById('debug-console');
               if (el) el.classList.toggle('hidden');
             }}
-            className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-[8px] font-bold uppercase tracking-widest text-white/30"
+            className="w-full py-2 bg-purple-600/20 hover:bg-purple-600/40 rounded-lg text-[8px] font-bold uppercase tracking-widest text-purple-400 border border-purple-500/30"
           >
             Toggle Debug Console
+          </button>
+          <button 
+            type="button"
+            onClick={() => addLog('Test Log: Debug console is working!')}
+            className="w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-[8px] font-bold uppercase tracking-widest text-white/30"
+          >
+            Send Test Log
           </button>
         </div>
       </aside>
 
       <main className="flex-1 p-8 md:p-12 overflow-y-auto max-h-screen">
         <div className="max-w-4xl mx-auto">
-          {/* Debug Console (Hidden by default) */}
-          <div id="debug-console" className="hidden mb-8 bg-black border border-white/10 rounded-2xl p-4 max-h-60 overflow-y-auto font-mono text-[10px] space-y-1">
+          {/* Debug Console (Visible by default for troubleshooting) */}
+          <div id="debug-console" className="mb-8 bg-zinc-900 border-2 border-purple-500/50 rounded-2xl p-4 max-h-60 overflow-y-auto font-mono text-[10px] space-y-1 shadow-2xl shadow-purple-500/10">
             <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
-              <span className="text-purple-500 font-bold uppercase tracking-widest">Debug Console</span>
-              <button onClick={() => setDebugLogs([])} className="text-white/30 hover:text-white">Clear</button>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                <span className="text-purple-500 font-bold uppercase tracking-widest">Live Debug Console</span>
+              </div>
+              <button onClick={() => setDebugLogs([])} className="text-white/30 hover:text-white text-[8px] font-bold uppercase tracking-widest">Clear Logs</button>
             </div>
-            {debugLogs.length === 0 && <div className="text-white/20 italic">No logs yet...</div>}
+            {debugLogs.length === 0 && <div className="text-white/20 italic">Waiting for logs... Try uploading an image or clicking "Send Test Log"</div>}
             {debugLogs.map((log, i) => (
-              <div key={i} className={cn("flex gap-2", log.type === 'error' ? "text-red-400" : "text-white/50")}>
-                <span className="opacity-30">[{log.time}]</span>
+              <div key={i} className={cn("flex gap-2 py-0.5 border-b border-white/5 last:border-0", log.type === 'error' ? "text-red-400 bg-red-400/5" : "text-white/70")}>
+                <span className="opacity-30 flex-shrink-0">[{log.time}]</span>
                 <span className="flex-1 break-all">{log.msg}</span>
               </div>
             ))}
@@ -1202,7 +1225,7 @@ export default function AdminPage() {
                         }
                         setLocalGallery(prev => [...prev, ...newItems]);
                       } catch (err: any) {
-                        console.error('Gallery drop upload failed:', err);
+                        addLog(`Gallery drop upload failed: ${err}`, 'error');
                         alert(`이미지 업로드에 실패했습니다: ${err.message || err}`);
                       } finally {
                         setGalleryUploading(false);
@@ -1258,7 +1281,7 @@ export default function AdminPage() {
                           }
                           setLocalGallery(prev => [...prev, ...newItems]);
                         } catch (err: any) {
-                          console.error('Gallery input upload failed:', err);
+                          addLog(`Gallery input upload failed: ${err}`, 'error');
                           alert(`이미지 업로드에 실패했습니다: ${err.message || err}`);
                         } finally {
                           setGalleryUploading(false);
