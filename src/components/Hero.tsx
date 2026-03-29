@@ -2,7 +2,7 @@ import { motion } from 'motion/react';
 
 export default function Hero({ data }: { data: { title: string, slogan: string, bgImage: string, logo?: string } }) {
   return (
-    <section id="home" className="relative min-h-[50vh] md:h-screen flex items-center justify-center overflow-hidden bg-black">
+    <section id="home" className="relative min-h-[40vh] md:h-screen flex items-center justify-center overflow-hidden bg-black">
       <div className="absolute inset-0 z-0">
         <img
           src={data.bgImage}
@@ -18,7 +18,7 @@ export default function Hero({ data }: { data: { title: string, slogan: string, 
           initial={{ opacity: 0, x: -30 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8 }}
-          className="text-4xl md:text-9xl font-bold text-white mb-4 md:mb-8 tracking-tighter uppercase whitespace-pre-line leading-[0.9]"
+          className="text-3xl md:text-9xl font-bold text-white mb-4 md:mb-8 tracking-tighter uppercase whitespace-pre-line leading-[0.9]"
         >
           {data.title}
         </motion.h1>

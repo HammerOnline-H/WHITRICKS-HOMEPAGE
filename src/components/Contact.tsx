@@ -17,7 +17,7 @@ export default function Contact({ data }: { data: SiteContent['contact'] }) {
         <div className="grid md:grid-cols-2 gap-24">
           <div className="space-y-12">
             <div className="space-y-6">
-              <h3 className="text-4xl font-bold tracking-tight">{data.title || "Let's Connect."}</h3>
+              <h3 className="text-2xl md:text-4xl font-bold tracking-tight">{data.title || "Let's Connect."}</h3>
               <p className="text-white/40 max-w-md leading-relaxed">
                 {data.description || "Reach out for bookings, collaborations, or just to say hello. We're always open to new magical opportunities."}
               </p>
@@ -30,7 +30,7 @@ export default function Contact({ data }: { data: SiteContent['contact'] }) {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-1">Address</p>
-                  <p className="text-lg">{data.address}</p>
+                  <p className="text-base md:text-lg">{data.address}</p>
                 </div>
               </div>
 
@@ -40,7 +40,7 @@ export default function Contact({ data }: { data: SiteContent['contact'] }) {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-1">Phone</p>
-                  <p className="text-lg">{data.phone}</p>
+                  <p className="text-base md:text-lg">{data.phone}</p>
                 </div>
               </div>
 
@@ -50,7 +50,7 @@ export default function Contact({ data }: { data: SiteContent['contact'] }) {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-1">Email</p>
-                  <p className="text-lg">{data.email}</p>
+                  <p className="text-base md:text-lg">{data.email}</p>
                 </div>
               </div>
             </div>

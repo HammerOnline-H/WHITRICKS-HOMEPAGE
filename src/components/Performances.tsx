@@ -30,7 +30,7 @@ export default function Performances({ data }: { data: Performance[] }) {
                   referrerPolicy="no-referrer"
                 />
               </div>
-              <h3 className="text-2xl font-bold mb-4 group-hover:text-purple-400 transition-colors">{perf.title}</h3>
+              <h3 className="text-xl md:text-2xl font-bold mb-4 group-hover:text-purple-400 transition-colors">{perf.title}</h3>
               <div className="text-white/50 text-sm leading-relaxed whitespace-pre-wrap mb-6">
                 {perf.description}
               </div>

@@ -21,7 +21,7 @@ export default function About({ history, members }: { history: string, members: 
   const isCarousel = members.length >= 4;
 
   return (
-    <section id="about" className="py-32 bg-black text-white px-6 overflow-hidden">
+    <section id="about" className="pt-12 md:pt-32 pb-32 bg-black text-white px-6 overflow-hidden">
       <div className="max-w-7xl mx-auto">
         {/* History Section */}
         <div className="mb-40">
@@ -37,7 +37,7 @@ export default function About({ history, members }: { history: string, members: 
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
-              className="text-lg md:text-2xl font-bold text-white leading-[1.4] tracking-tight max-w-5xl mx-auto text-center line-clamp-6 group-hover:text-purple-400 transition-colors whitespace-pre-wrap"
+              className="text-base md:text-2xl font-bold text-white leading-[1.4] tracking-tight max-w-5xl mx-auto text-center line-clamp-6 group-hover:text-purple-400 transition-colors whitespace-pre-wrap"
             >
               {history}
             </motion.div>
@@ -82,7 +82,7 @@ export default function About({ history, members }: { history: string, members: 
           {isCarousel ? (
             <div 
               ref={carouselRef}
-              className="flex gap-12 overflow-x-auto pb-12 snap-x no-scrollbar"
+              className="flex gap-6 md:gap-12 overflow-x-auto pb-12 snap-x no-scrollbar"
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {members.map((member, idx) => (
@@ -91,7 +91,7 @@ export default function About({ history, members }: { history: string, members: 
                   initial={{ opacity: 0, x: 50 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.1 }}
-                  className="flex-shrink-0 w-[180px] md:w-[225px] snap-start group cursor-pointer flex flex-col items-center"
+                  className="flex-shrink-0 w-[130px] md:w-[225px] snap-start group cursor-pointer flex flex-col items-center"
                   onClick={() => setSelectedMember(member)}
                 >
                   <div className="relative w-full aspect-square overflow-hidden rounded-full border border-white/10 mb-6">
@@ -103,20 +103,20 @@ export default function About({ history, members }: { history: string, members: 
                     />
                     <div className="absolute inset-0 bg-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
-                  <h3 className="text-base md:text-lg font-bold text-white text-center line-clamp-1">{member.name}</h3>
+                  <h3 className="text-sm md:text-lg font-bold text-white text-center line-clamp-1">{member.name}</h3>
                   <p className="text-purple-500 font-bold uppercase tracking-widest text-[10px] mt-2 opacity-0 group-hover:opacity-100 transition-opacity">View Profile</p>
                 </motion.div>
               ))}
             </div>
           ) : (
-            <div className="flex flex-wrap justify-center gap-12">
+            <div className="flex flex-wrap justify-center gap-6 md:gap-12">
               {members.map((member, idx) => (
                 <motion.div
                   key={member.id}
                   initial={{ opacity: 0, y: 40 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.1 }}
-                  className="group cursor-pointer flex flex-col items-center w-[180px] md:w-[225px]"
+                  className="group cursor-pointer flex flex-col items-center w-[130px] md:w-[225px]"
                   onClick={() => setSelectedMember(member)}
                 >
                   <div className="relative w-full aspect-square overflow-hidden rounded-full border border-white/10 mb-6">
@@ -128,7 +128,7 @@ export default function About({ history, members }: { history: string, members: 
                     />
                     <div className="absolute inset-0 bg-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
-                  <h3 className="text-base md:text-lg font-bold text-white text-center line-clamp-1">{member.name}</h3>
+                  <h3 className="text-sm md:text-lg font-bold text-white text-center line-clamp-1">{member.name}</h3>
                   <p className="text-purple-500 font-bold uppercase tracking-widest text-[10px] mt-2 opacity-0 group-hover:opacity-100 transition-opacity">View Profile</p>
                 </motion.div>
               ))}
@@ -157,7 +157,7 @@ export default function About({ history, members }: { history: string, members: 
               onClick={(e) => e.stopPropagation()}
             >
               <h2 className="text-xs font-bold text-purple-500 uppercase tracking-[0.5em] mb-12">Performance History</h2>
-              <div className="text-2xl md:text-4xl font-light text-white/90 leading-relaxed whitespace-pre-wrap">
+              <div className="text-lg md:text-4xl font-light text-white/90 leading-relaxed whitespace-pre-wrap">
                 {history}
               </div>
             </motion.div>
@@ -203,11 +203,11 @@ export default function About({ history, members }: { history: string, members: 
                         className="space-y-10"
                       >
                         <div className="space-y-4">
-                          <h3 className="text-4xl md:text-5xl font-bold tracking-tighter">{selectedMember.name}</h3>
+                          <h3 className="text-2xl md:text-5xl font-bold tracking-tighter">{selectedMember.name}</h3>
                           <div className="h-1 w-20 bg-purple-500" />
                         </div>
                         
-                        <div className="text-base md:text-lg text-white/70 leading-relaxed whitespace-pre-wrap">
+                        <div className="text-sm md:text-lg text-white/70 leading-relaxed whitespace-pre-wrap">
                           {selectedMember.bio}
                         </div>
 
@@ -258,7 +258,7 @@ export default function About({ history, members }: { history: string, members: 
                         className="space-y-10"
                       >
                         <div className="space-y-4">
-                          <h3 className="text-4xl md:text-5xl font-bold tracking-tighter uppercase">Experience & History</h3>
+                          <h3 className="text-2xl md:text-5xl font-bold tracking-tighter uppercase">Experience & History</h3>
                           <div className="h-1 w-20 bg-purple-500" />
                         </div>
                         

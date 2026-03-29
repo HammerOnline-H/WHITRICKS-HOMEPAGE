@@ -20,10 +20,10 @@ export default function Gallery({ data }: { data: GalleryItem[] }) {
 
         {/* Dynamic column count based on photo count */}
         <div className={cn(
-          "gap-4 space-y-4",
+          "gap-2 md:gap-4 space-y-2 md:space-y-4",
           data.length > 12 
             ? "columns-2 sm:columns-3 lg:columns-4 xl:columns-5" 
-            : "columns-1 sm:columns-2 lg:columns-3"
+            : "columns-2 sm:columns-2 lg:columns-3"
         )}>
           {data.map((item, idx) => (
             <motion.div
@@ -73,7 +73,7 @@ export default function Gallery({ data }: { data: GalleryItem[] }) {
                 className="w-full h-auto max-h-[70vh] object-contain rounded-lg"
               />
               <div className="text-center">
-                <p className="text-lg font-serif italic text-white/80">{selectedImage.description}</p>
+                <p className="text-base md:text-lg font-serif italic text-white/80">{selectedImage.description}</p>
               </div>
             </motion.div>
           </motion.div>

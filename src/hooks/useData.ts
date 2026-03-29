@@ -9,7 +9,7 @@ const DEFAULT_CONTENT: SiteContent = {
     title: "WHITRICKS\n화이트릭스",
     slogan: "SLOGAN LINE 1\nSLOGAN LINE 2",
     bgImage: "https://picsum.photos/seed/magic1/1920/1080",
-    logo: "https://lh3.googleusercontent.com/d/1N6OKkcND9Ttft8ibl_R-0WQDr9bL72C4"
+    logo: "https://drive.google.com/uc?export=view&id=1N6OKkcND9Ttft8ibl_R-0WQDr9bL72C4"
   },
   about: {
     history: "WHITRICKS PERFORMANCE HISTORY\nLINE 1\nLINE 2\nLINE 3",

@@ -9,6 +9,7 @@ export default function Navbar() {
   const { content, loading } = useSiteContent();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [logoError, setLogoError] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -37,8 +38,14 @@ export default function Navbar() {
     )}>
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 text-white font-bold text-2xl tracking-tighter">
-          {content.home.logo ? (
-            <img src={content.home.logo} alt="WHITRICKS Logo" className="w-24 h-24 object-contain" referrerPolicy="no-referrer" />
+          {content.home.logo && !logoError ? (
+            <img 
+              src={content.home.logo} 
+              alt="WHITRICKS Logo" 
+              className="w-12 h-12 md:w-24 md:h-24 object-contain" 
+              referrerPolicy="no-referrer"
+              onError={() => setLogoError(true)}
+            />
           ) : (
             <Wand2 className="text-purple-500" />
           )}
@@ -87,18 +94,11 @@ export default function Navbar() {
                 key={link.name}
                 href={link.href}
                 onClick={() => setIsMenuOpen(false)}
-                className="text-lg font-medium text-white/70 hover:text-white transition-colors"
+                className="text-base font-medium text-white/70 hover:text-white transition-colors"
               >
                 {link.name}
               </a>
             ))}
-            <Link
-              to="/admin"
-              onClick={() => setIsMenuOpen(false)}
-              className="text-purple-400 font-bold"
-            >
-              ADMIN DASHBOARD
-            </Link>
           </motion.div>
         )}
       </AnimatePresence>
