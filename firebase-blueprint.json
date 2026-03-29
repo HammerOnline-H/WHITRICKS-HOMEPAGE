@@ -81,6 +81,18 @@
         "description": { "type": "string" },
         "order": { "type": "integer" }
       }
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and role",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role"]
     }
   },
   "firestore": {
@@ -103,6 +115,10 @@
     "/members/{id}": {
       "schema": "Member",
       "description": "Team members list"
+    },
+    "/users/{id}": {
+      "schema": "User",
+      "description": "User profiles and roles"
     }
   }
 }

@@ -2,6 +2,7 @@ export interface Member {
   id: string;
   name: string;
   bio: string;
+  history?: string;
   links: string[];
   videoUrl: string;
   image: string;
@@ -54,4 +55,12 @@ export interface Partner {
   logo: string;
   description: string;
   order: number;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  displayName?: string;
+  role: 'admin' | 'user';
+  createdAt: any;
 }

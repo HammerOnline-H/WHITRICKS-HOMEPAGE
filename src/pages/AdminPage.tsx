@@ -5,11 +5,11 @@ import { ref, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage
 import { db, logout, storage } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { useAuth } from '../hooks/useAuth';
-import { useSiteContent, usePerformances, useGallery, usePartners, useMembers } from '../hooks/useData';
+import { useSiteContent, usePerformances, useGallery, usePartners, useMembers, useUsers } from '../hooks/useData';
 import { Navigate, Link } from 'react-router-dom';
-import { LayoutDashboard, Users, Sparkles, Settings, LogOut, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Share2, Upload, Crop, Video, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Users, Sparkles, Settings, LogOut, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Share2, Upload, Crop, Video, Loader2, ShieldCheck, Mail, Calendar } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Performance, GalleryItem, Partner, SiteContent, Member } from '../types';
+import { Performance, GalleryItem, Partner, SiteContent, Member, UserProfile } from '../types';
 import Cropper from 'react-easy-crop';
 import getCroppedImg, { createImage } from '../lib/cropImage';
 import { addLog } from '../lib/logger';
@@ -299,7 +299,7 @@ function MultiImageUploader({ label, values, onChange, max = 5, aspectRatio }: {
         )}
       </div>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {values.map((url, idx) => (
           <div key={idx} className="relative group aspect-square bg-black rounded-xl border border-white/10 overflow-hidden">
             <img src={url} alt="" className="w-full h-full object-cover" />
@@ -438,8 +438,8 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
   return (
     <div className="space-y-4">
       <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">{label}</label>
-      <div className="flex items-center gap-4">
-        <div className="min-w-[80px] h-20 rounded-xl bg-black border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center p-2 relative">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="w-20 h-20 rounded-xl bg-black border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center p-2 relative">
           {value ? <img src={value} className="max-w-full max-h-full object-contain" referrerPolicy="no-referrer" /> : <div className="w-full h-full flex items-center justify-center text-white/10"><ImageIcon size={24} /></div>}
           {uploading && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
@@ -447,13 +447,13 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
             </div>
           )}
         </div>
-        <div className="flex-1 space-y-2">
+        <div className="w-full flex-1 min-w-0 space-y-2">
           <input 
             type="text" 
             value={value} 
             onChange={(e) => onChange(e.target.value)}
             placeholder="Image URL or Upload"
-            className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500"
+            className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500 truncate"
           />
           <div className="flex gap-2">
             <label className={cn(
@@ -461,7 +461,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
               uploading && "opacity-50 cursor-not-allowed"
             )}>
               <Upload size={14} />
-              {uploading ? 'Uploading...' : 'Upload'}
+              <span className="truncate">{uploading ? 'Uploading...' : 'Upload'}</span>
               <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} disabled={uploading} />
             </label>
             <button 
@@ -471,7 +471,7 @@ function ImageUploader({ label, value, onChange, aspectRatio }: { label: string,
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded-lg transition-all text-[10px] font-bold uppercase tracking-widest"
             >
               <Crop size={14} />
-              Crop
+              <span className="truncate">Crop</span>
             </button>
           </div>
         </div>
@@ -584,6 +584,7 @@ export default function AdminPage() {
   const { gallery, loading: galleryLoading } = useGallery();
   const { partners, loading: partnersLoading } = usePartners();
   const { members, loading: membersLoading } = useMembers();
+  const { users, loading: usersLoading } = useUsers(isAdmin);
   
   const [localContent, setLocalContent] = useState<SiteContent | null>(null);
   const [localMembers, setLocalMembers] = useState<Member[]>([]);
@@ -673,7 +674,11 @@ export default function AdminPage() {
     }
   }, [gallery, localGallery]);
 
-  if (authLoading || contentLoading || perfLoading || galleryLoading || partnersLoading || membersLoading || !localContent) return null;
+  if (authLoading || contentLoading || perfLoading || galleryLoading || partnersLoading || membersLoading || usersLoading || !localContent) return (
+    <div className="h-screen bg-black flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
   if (!user || !isAdmin) return <Navigate to="/login" />;
 
   const handleUpdateSite = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -744,15 +749,18 @@ export default function AdminPage() {
 
   const updateLocal = (path: string, val: any) => {
     if (!localContent) return;
-    addLog(`Updating local state: ${path} = ${val}`);
     const keys = path.split('.');
-    const newContent = JSON.parse(JSON.stringify(localContent));
-    let current: any = newContent;
-    for (let i = 0; i < keys.length - 1; i++) {
-      current = current[keys[i]];
-    }
-    current[keys[keys.length - 1]] = val;
-    setLocalContent(newContent);
+    setLocalContent(prev => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      let current: any = next;
+      for (let i = 0; i < keys.length - 1; i++) {
+        current[keys[i]] = { ...current[keys[i]] };
+        current = current[keys[i]];
+      }
+      current[keys[keys.length - 1]] = val;
+      return next;
+    });
   };
 
   // Collection Handlers
@@ -798,6 +806,7 @@ export default function AdminPage() {
       id: newId,
       name: 'NEW MEMBER', 
       bio: 'BIO TEXT', 
+      history: '',
       image: 'https://picsum.photos/seed/member/400/500', 
       images: [],
       videoUrl: '', 
@@ -823,6 +832,7 @@ export default function AdminPage() {
             { id: 'gallery', icon: ImageIcon, label: 'Gallery' },
             { id: 'contact', icon: Share2, label: 'Contact' },
             { id: 'network', icon: Settings, label: 'Network' },
+            { id: 'users', icon: ShieldCheck, label: 'Admins' },
           ].map((tab) => (
             <button
               type="button"
@@ -1011,6 +1021,7 @@ export default function AdminPage() {
                               id: newId,
                               name: `Member ${localMembers.length + i + 1}`,
                               bio: `This is a sample bio for member ${localMembers.length + i + 1}. They are a key part of the WHITRICKS team.`,
+                              history: `2024 - Sample Achievement\n2023 - Sample Performance\n2022 - Sample Award`,
                               image: `https://picsum.photos/seed/member_${Date.now()}_${i}/400/500`,
                               videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
                               links: ['Instagram', 'Portfolio'],
@@ -1028,7 +1039,7 @@ export default function AdminPage() {
 
                   <div className="grid md:grid-cols-2 gap-8">
                     {localMembers.map((member, idx) => (
-                      <div key={member.id} className="bg-zinc-900/50 p-8 rounded-3xl border border-white/5 space-y-6 relative group">
+                      <div key={member.id} className="bg-zinc-900/50 p-8 rounded-3xl border border-white/5 space-y-6 relative group overflow-hidden">
                         <button 
                           type="button"
                           onClick={() => {
@@ -1064,6 +1075,20 @@ export default function AdminPage() {
                             }} 
                             rows={6} 
                             className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-sm resize-none" 
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-white/30 uppercase">History / Experience (Small Text)</label>
+                          <LocalInput 
+                            value={member.history || ''} 
+                            textarea
+                            onSave={async (val: string) => {
+                              setLocalMembers(prev => prev.map(m => m.id === member.id ? { ...m, history: val } : m));
+                            }} 
+                            rows={6} 
+                            className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-sm resize-none" 
+                            placeholder="Enter member history/experience here..."
                           />
                         </div>
                         
@@ -1118,7 +1143,7 @@ export default function AdminPage() {
               <div className="space-y-6">
                 <button type="button" onClick={addPerformance} className="w-full py-4 border border-dashed border-white/10 rounded-2xl text-xs font-bold text-white/30 hover:text-white hover:border-purple-500 transition-all uppercase tracking-widest">+ Add Performance</button>
                 {localPerformances.map(p => (
-                  <div key={p.id} className="bg-zinc-900 p-8 rounded-3xl border border-white/5 space-y-6 relative">
+                  <div key={p.id} className="bg-zinc-900 p-8 rounded-3xl border border-white/5 space-y-6 relative overflow-hidden">
                     <button 
                       type="button" 
                       onClick={() => {
@@ -1315,7 +1340,7 @@ export default function AdminPage() {
 
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {localGallery.map(g => (
-                    <div key={g.id} className="bg-zinc-900 p-6 rounded-2xl border border-white/5 space-y-4">
+                    <div key={g.id} className="bg-zinc-900 p-6 rounded-2xl border border-white/5 space-y-4 overflow-hidden">
                       <div className="aspect-video rounded-lg overflow-hidden bg-black">
                         <img src={g.imageUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       </div>
@@ -1424,7 +1449,7 @@ export default function AdminPage() {
                 <button type="button" onClick={addPartner} className="w-full py-4 border border-dashed border-white/10 rounded-2xl text-xs font-bold text-white/30 hover:text-white hover:border-purple-500 transition-all uppercase tracking-widest">+ Add Partner/Network</button>
                 <div className="grid md:grid-cols-2 gap-4">
                   {localPartners.map(p => (
-                    <div key={p.id} className="bg-zinc-900 p-6 rounded-2xl border border-white/5 flex gap-4 items-center relative">
+                    <div key={p.id} className="bg-zinc-900 p-6 rounded-2xl border border-white/5 flex gap-4 items-center relative overflow-hidden">
                       <div className="w-16 h-16 rounded-full bg-black p-2 flex-shrink-0">
                         <img src={p.logo} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                       </div>
@@ -1471,6 +1496,97 @@ export default function AdminPage() {
                   <button type="submit" disabled={saving} className="bg-purple-600 text-white px-10 py-4 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg shadow-purple-600/20">
                     <Save size={14} /> {saving ? 'SAVING...' : 'SAVE NETWORK CHANGES'}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'users' && (
+              <div className="space-y-8">
+                <div className="grid gap-6">
+                  {users.map((u) => (
+                    <div key={u.id} className="bg-zinc-900/50 p-8 rounded-3xl border border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div className="flex items-center gap-6">
+                        <div className="w-16 h-16 rounded-full bg-purple-600/20 flex items-center justify-center text-purple-500 font-bold text-xl">
+                          {u.displayName ? u.displayName[0].toUpperCase() : u.email[0].toUpperCase()}
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-lg font-bold tracking-tight">{u.displayName || 'Anonymous User'}</h4>
+                          <div className="flex items-center gap-4 text-white/40 text-[10px] font-bold uppercase tracking-widest">
+                            <span className="flex items-center gap-1.5"><Mail size={12} /> {u.email}</span>
+                            <span className="flex items-center gap-1.5"><Calendar size={12} /> {u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString() : 'New User'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-4">
+                        <div className="flex bg-black rounded-xl p-1 border border-white/10">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (u.email === "ham80908090@gmail.com") return;
+                              try {
+                                await updateDoc(doc(db, 'users', u.id), { role: 'admin' });
+                                addLog(`User ${u.email} promoted to admin`);
+                              } catch (err) {
+                                handleFirestoreError(err, OperationType.UPDATE, `users/${u.id}`);
+                              }
+                            }}
+                            className={cn(
+                              "px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                              u.role === 'admin' ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20" : "text-white/30 hover:text-white"
+                            )}
+                          >
+                            Admin
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (u.email === "ham80908090@gmail.com") return;
+                              try {
+                                await updateDoc(doc(db, 'users', u.id), { role: 'user' });
+                                addLog(`User ${u.email} demoted to user`);
+                              } catch (err) {
+                                handleFirestoreError(err, OperationType.UPDATE, `users/${u.id}`);
+                              }
+                            }}
+                            className={cn(
+                              "px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                              u.role === 'user' ? "bg-white/10 text-white" : "text-white/30 hover:text-white"
+                            )}
+                          >
+                            User
+                          </button>
+                        </div>
+                        {u.email !== "ham80908090@gmail.com" && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!confirm('정말 이 사용자를 삭제하시겠습니까?')) return;
+                              try {
+                                await deleteDoc(doc(db, 'users', u.id));
+                                addLog(`User ${u.email} deleted`);
+                              } catch (err) {
+                                handleFirestoreError(err, OperationType.DELETE, `users/${u.id}`);
+                              }
+                            }}
+                            className="p-3 text-white/20 hover:text-red-500 transition-colors"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="bg-purple-500/5 border border-purple-500/10 p-8 rounded-3xl">
+                  <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-4">How to add admins</h4>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    1. 새로운 관리자가 될 사람이 먼저 구글 로그인을 해야 합니다.<br />
+                    2. 로그인을 하면 이 목록에 나타납니다.<br />
+                    3. 해당 사용자의 버튼을 'Admin'으로 변경하면 관리 권한이 부여됩니다.<br />
+                    <span className="text-purple-400/50 text-[10px] mt-4 block">* 기본 관리자(ham80908090@gmail.com)는 권한 변경이 불가능합니다.</span>
+                  </p>
                 </div>
               </div>
             )}

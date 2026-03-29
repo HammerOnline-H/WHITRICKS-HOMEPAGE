@@ -1,29 +1,8 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, setDoc, query, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { SiteContent, Performance, GalleryItem, Partner, Member } from '../types';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-}
+import { SiteContent, Performance, GalleryItem, Partner, Member, UserProfile } from '../types';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 
 const DEFAULT_CONTENT: SiteContent = {
   home: {
@@ -156,4 +135,63 @@ export function useMembers() {
   }, []);
 
   return { members, loading };
+}
+
+export function useUsers(enabled: boolean = true) {
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+    const path = 'users';
+    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile));
+      setUsers(data);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    });
+    return unsub;
+  }, [enabled]);
+
+  return { users, loading };
+}
+
+export function useIsAdmin() {
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      if (user) {
+        if (user.email === "ham80908090@gmail.com") {
+          setIsAdmin(true);
+          setLoading(false);
+        } else {
+          const path = `users/${user.uid}`;
+          onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+            if (docSnap.exists()) {
+              setIsAdmin(docSnap.data().role === 'admin');
+            } else {
+              setIsAdmin(false);
+            }
+            setLoading(false);
+          }, (error) => {
+            handleFirestoreError(error, OperationType.GET, path);
+            setIsAdmin(false);
+            setLoading(false);
+          });
+        }
+      } else {
+        setIsAdmin(false);
+        setLoading(false);
+      }
+    });
+    return unsub;
+  }, []);
+
+  return { isAdmin, loading };
 }

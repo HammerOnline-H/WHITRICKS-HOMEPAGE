@@ -40,6 +40,13 @@ service cloud.firestore {
     //   - image: string (required, valid URL)
     //   - order: number (required)
     //
+    // Collection: users/{id}
+    // Fields:
+    //   - email: string (required)
+    //   - displayName: string (optional)
+    //   - role: string (required, 'admin' or 'user')
+    //   - createdAt: timestamp (required)
+    //
     // ===============================================================
 
     // ===============================================================
@@ -51,7 +58,12 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        (request.auth.token.email == "ham80908090@gmail.com" && request.auth.token.email_verified == true);
+        ( (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "ham80908090@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
     function hasRequiredFields(fields) {
@@ -105,6 +117,12 @@ service cloud.firestore {
              (!('images' in data) || data.images is list);
     }
 
+    function isValidUser(data) {
+      return data.email is string &&
+             data.role in ['admin', 'user'] &&
+             data.createdAt is timestamp;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -135,6 +153,15 @@ service cloud.firestore {
     match /members/{id} {
       allow read: if true;
       allow create, update: if isAdmin() && isValidMember(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /users/{id} {
+      allow read: if isOwner(id) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(id) && 
+                    ((request.resource.data.role == 'user') || (request.auth.token.email == "ham80908090@gmail.com" && request.resource.data.role == 'admin')) && 
+                    isValidUser(request.resource.data);
+      allow update: if isAdmin() && isValidUser(request.resource.data);
       allow delete: if isAdmin();
     }
   }
